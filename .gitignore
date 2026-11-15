@@ -1,0 +1,12 @@
+.build/
+build/
+.claude/settings.local.json
+.DS_Store
+*.p12
+*.app
+*.dmg
+*.zip
+*.cer
+.swiftpm/
+DerivedData/
+.env

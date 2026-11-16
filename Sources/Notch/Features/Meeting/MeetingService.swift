@@ -124,12 +124,24 @@ final class MeetingService: NSObject, ObservableObject {
     /// Step-by-step log for troubleshooting: ~/.notch/meeting.log
     private static let logQueue = DispatchQueue(label: "notch.meeting.log", qos: .utility)
 
+    /// What people said never outlives the 24 h transcript in the store edition: the log keeps only a word count.
+    /// The master build keeps the text for debugging.
+    nonisolated static func redact(_ t: String, _ n: Int) -> String {
+        Skin.isMaster ? String(t.prefix(n)) : "[\(t.split(separator: " ").count) words]"
+    }
+
     func log(_ s: String) {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
         let line = "\(f.string(from: Date()))  \(s)\n"
         let url = Paths.home.appendingPathComponent("meeting.log")
         Self.logQueue.async {   // serial: parallel appends were losing lines
-            if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close() }
+            if let h = try? FileHandle(forWritingTo: url) {
+                // Over 1 MB: keep the newest 256 KB, so the log never eats disk.
+                if h.seekToEndOfFile() > 1_000_000, let d = try? Data(contentsOf: url) {
+                    try? h.close(); try? (d.suffix(256_000) + Data(line.utf8)).write(to: url, options: .atomic); return
+                }
+                h.write(Data(line.utf8)); try? h.close()
+            }
             else { try? line.write(to: url, atomically: true, encoding: .utf8) }
         }
     }
@@ -316,7 +328,7 @@ final class MeetingService: NSObject, ObservableObject {
             return
         }
         volatile[id] = nil
-        log("heard (\(who), final): \(text.prefix(60))")
+        log("heard (\(who), final): \(Self.redact(text, 60))")
         apply(id, who, text, true)
     }
 
@@ -477,7 +489,7 @@ final class MeetingService: NSObject, ObservableObject {
         // A cut-off version of this question was answered already: replace that card.
         let title = (mine ? Self.minePrefix : "") + question
         let stale = suggestions.filter { $0.auto && title.hasPrefix($0.title) }.map(\.id)
-        if stale.isEmpty, isRepeat(question) { log("skipped repeat: \(question.prefix(60))"); return }
+        if stale.isEmpty, isRepeat(question) { log("skipped repeat: \(Self.redact(question, 60))"); return }
         if let r = runningSid, stale.contains(r) { running?.cancel(); running = nil }
         suggestions.removeAll { stale.contains($0.id) }
         run(title: title, prompt: prompt, auto: true)
@@ -491,7 +503,7 @@ final class MeetingService: NSObject, ObservableObject {
         if suggestions.count > 20 { suggestions.removeLast() }
         let sid = suggestions[0].id
         runningSid = sid
-        log("asking Claude (\(auto ? "auto" : "manual")): \(title.prefix(80))")
+        log("asking AI (\(auto ? "auto" : "manual")): \(Self.redact(title, 80))")
         let asked = Date()
         running = Task { @MainActor in
             var first = true

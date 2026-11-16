@@ -85,7 +85,8 @@ final class LocalServer {
             guard let i = line.firstIndex(of: ":") else { continue }
             headers[line[..<i].lowercased()] = line[line.index(after: i)...].trimmingCharacters(in: .whitespaces)
         }
-        let len = Int(headers["content-length"] ?? "0") ?? 0
+        // Clamp: a negative Content-Length used to crash the app (Data.prefix traps), before any token check.
+        let len = min(max(Int(headers["content-length"] ?? "0") ?? 0, 0), 8 << 20)
         let body = d[end.upperBound...]
         guard body.count >= len else { return nil }
         let path = String(first[1]).split(separator: "?").first.map(String.init) ?? "/"
@@ -93,7 +94,7 @@ final class LocalServer {
     }
 
     private func handle(_ r: Request, _ c: NWConnection) {
-        if r.method != "GET", r.headers["x-notch-token"] != Self.token {
+        if r.method != "GET", !Self.sameToken(r.headers["x-notch-token"] ?? "") {
             return reply(c, 401, ["error": "missing or wrong X-Notch-Token (see ~/.notch/token)"])
         }
         guard let h = routes[r.method + " " + r.path] else { return reply(c, 404, ["error": "not found"]) }
@@ -101,6 +102,13 @@ final class LocalServer {
             let (status, obj) = await h(r)
             self.reply(c, status, obj)
         }
+    }
+
+    /// Constant-time compare, so response timing can't leak the token byte by byte.
+    static func sameToken(_ t: String) -> Bool {
+        let a = Array(t.utf8), b = Array(token.utf8)
+        guard a.count == b.count else { return false }
+        return zip(a, b).reduce(0) { $0 | ($1.0 ^ $1.1) } == 0
     }
 
     private func reply(_ c: NWConnection, _ status: Int, _ obj: Any) {

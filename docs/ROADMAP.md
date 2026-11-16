@@ -41,3 +41,24 @@ Automated check: `NOTCH_SELFTEST=1 swift run Notch` (parsers). Layout smoke test
 - [x] Editions: store by default; master with MASTER=1 or ~/.notch/master (custom hex colours, hide any tab)
 - [x] CPU with the themed notch open: WindowServer ~12%, Notch ~2% (same as before)
 - Test by hand: each theme with glass on/off; hiding tabs and scroll-switching; the glint on open
+
+## M12 · Full test and security pass (2026-11-17)
+Fixed:
+- [x] Local API crash: a negative Content-Length crashed the app before the token check (any local process)
+- [x] Palette crash: thousands of "(" or "-" overflowed the calculator's stack (input capped at 200 chars)
+- [x] Token compared in constant time; ~/.notch now owner-only (0700): transcripts, clipboard, token
+- [x] Store edition logs keep only word counts, so speech never outlives the 24 h transcript
+- [x] /notify rejects non-JSON (400) and caps title/body length
+- [x] Unreadable config.json is backed up to config.json.broken before defaults replace it
+- [x] Claude Code hook path quoted (home folders with spaces)
+- [x] Mic/Speech permission texts mention Meeting mode; locked tabs show their icon
+Verified:
+- [x] Self-test with 3,000 random junk inputs per parser, junk config, editions (store and master)
+- [x] API: no/wrong token 401, CORS preflight refused, not reachable from LAN, 9 MB body dropped, 300 hanging connections, still serves
+- [x] End-to-end meeting with spoken questions: exact transcript, first words 1.9–2.3 s, correct answers
+- [x] 5 start/stop cycles: memory steady at ~81 MB; single instance; hidden from screenshots; idle CPU ~1.5%
+- [x] Git history: no keys or private emails
+Before selling (needs you):
+- [ ] Developer ID signing + notarisation (scripts/make-app.sh supports SIGN_ID and NOTARY_PROFILE)
+- [ ] Keep master-only code out of the public repo or ship only store binaries
+- [ ] Test by hand: real Zoom/Meet auto start, hotkeys, Codex/Gemini CLI with real logins

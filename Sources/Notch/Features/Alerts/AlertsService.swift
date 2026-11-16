@@ -20,10 +20,13 @@ final class AlertsService: ObservableObject {
 
     private init() {
         LocalServer.shared.route("POST", "/notify") { r in
-            let j = r.json
-            let title = j["title"] as? String ?? "Alert"
-            AlertsService.shared.add(title: title, body: j["body"] as? String ?? j["message"] as? String ?? "",
-                                     source: j["source"] as? String ?? "API")
+            guard let j = (try? JSONSerialization.jsonObject(with: r.body)) as? [String: Any] else {
+                return (400, ["error": "body must be a JSON object"])
+            }
+            // Cap lengths: a huge title would be saved and redrawn forever.
+            func str(_ k: String, _ n: Int) -> String? { (j[k] as? String).map { String($0.prefix(n)) } }
+            AlertsService.shared.add(title: str("title", 200) ?? "Alert", body: str("body", 2000) ?? str("message", 2000) ?? "",
+                                     source: str("source", 60) ?? "API")
             return (200, ["ok": true])
         }
     }

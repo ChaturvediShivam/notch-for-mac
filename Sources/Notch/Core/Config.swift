@@ -74,7 +74,12 @@ final class Store: ObservableObject {
     }
 
     private init() {
-        config = (try? JSONDecoder().decode(Config.self, from: Data(contentsOf: url))) ?? Config()
+        if let d = try? Data(contentsOf: url) {
+            if let c = try? JSONDecoder().decode(Config.self, from: d) { config = c; return }
+            // Unreadable: keep a copy before defaults overwrite it on the next change.
+            try? d.write(to: url.appendingPathExtension("broken"))
+        }
+        config = Config()
     }
 
     private func save() {

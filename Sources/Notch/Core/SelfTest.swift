@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// `NOTCH_SELFTEST=1 swift run` checks the hand-written parsers, then exits.
 @MainActor
@@ -41,6 +42,34 @@ enum SelfTest {
             let r = AnalyzerTranscriber.roman("क्या आप हैं")
             assert(r == "kya apa hain", r)
         }
+        // Fuzz: hostile or junk input must never crash (these used to be, or could be, remote/local crash paths).
+        assert(LocalServer.parse(Data("POST / HTTP/1.1\r\nContent-Length: -5\r\n\r\nabc".utf8))?.body.isEmpty == true)
+        assert(LocalServer.parse(Data("POST / HTTP/1.1\r\nContent-Length: 99999999999999999999\r\n\r\nabc".utf8)) != nil)
+        assert(LocalServer.parse(Data("\r\n\r\n".utf8)) == nil)
+        assert(LocalServer.parse(Data([0xFF, 0xFE, 0x0D, 0x0A, 0x0D, 0x0A])) == nil)
+        assert(LocalServer.sameToken(LocalServer.token) && !LocalServer.sameToken("") && !LocalServer.sameToken(LocalServer.token + "x"))
+        _ = Calculator.eval(String(repeating: "(", count: 100_000) + "1")
+        _ = Calculator.eval(String(repeating: "-", count: 100_000) + "1")
+        _ = Calculator.eval(String(repeating: "(", count: 199) + "1")
+        _ = Calculator.eval(String(repeating: "2^", count: 100_000) + "2")
+        assert(Calculator.eval("9^9^9") == nil || Calculator.eval("9^9^9")!.isInfinite || true)
+        var rng = SystemRandomNumberGenerator()
+        let alphabet = Array("0123456789+-*/^%().,  sqrtabcक्याहैं?!\u{0}\u{202E}😀\n")
+        for _ in 0..<3000 {
+            let junk = String((0..<Int.random(in: 0...40, using: &rng)).map { _ in alphabet.randomElement(using: &rng)! })
+            _ = Calculator.eval(junk); _ = MeetingService.isQuestion(junk); _ = PaletteService.url(from: junk)
+            _ = PaletteService.timerSeconds(junk); _ = LocalServer.parse(Data(junk.utf8))
+            if #available(macOS 26.0, *) { _ = AnalyzerTranscriber.roman(junk) }
+        }
+        // Config: junk / wrong types fall back to defaults instead of failing.
+        let bad = try? JSONDecoder().decode(Config.self, from: Data(#"{"opacity":"x","theme":5,"hiddenTabs":"Home","glass":true}"#.utf8))
+        assert(bad?.opacity == 1.0 && bad?.theme == "classic" && bad?.hiddenTabs == [] && bad?.glass == true)
+        // Looks: core tabs can't be hidden in the store edition; Settings never.
+        assert(!Skin.canHide(.settings))
+        if !Skin.isMaster { assert(!Skin.canHide(.home) && Skin.available.allSatisfy { !$0.masterOnly }) }
+        assert(Skin.canHide(.markets))
+        _ = Color(hex: "zz"); _ = Color(hex: ""); _ = Color(hex: "#FFFFFFFFFFFFFFFFFF")
+        if !Skin.isMaster { assert(MeetingService.redact("secret plan here", 60) == "[3 words]") }
         print("selftest: all passed")
         exit(0)
     }

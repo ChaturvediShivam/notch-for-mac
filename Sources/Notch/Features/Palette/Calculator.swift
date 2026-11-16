@@ -8,6 +8,8 @@ struct Calculator {
     private var i = 0
 
     static func eval(_ text: String) -> Double? {
+        // Recursive descent: thousands of "(" or "-" overflowed the stack and crashed the app. Real maths is short.
+        guard text.count <= 200 else { return nil }
         let t = text.replacingOccurrences(of: "×", with: "*").replacingOccurrences(of: "÷", with: "/")
             .replacingOccurrences(of: ",", with: "").lowercased()
         // Must look like maths: at least one operator or function, and a digit.

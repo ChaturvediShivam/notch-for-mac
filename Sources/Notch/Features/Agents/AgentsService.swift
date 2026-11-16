@@ -140,7 +140,7 @@ final class AgentsService: ObservableObject {
             var hooks = root["hooks"] as? [String: Any] ?? [:]
             let cmd = Self.hookURL.path
             func entry(_ event: String, matcher: String?, timeout: Int) -> [String: Any] {
-                var e: [String: Any] = ["hooks": [["type": "command", "command": "\(cmd) \(event)", "timeout": timeout]]]
+                var e: [String: Any] = ["hooks": [["type": "command", "command": "\"\(cmd)\" \(event)", "timeout": timeout]]]
                 if let matcher { e["matcher"] = matcher }
                 return e
             }

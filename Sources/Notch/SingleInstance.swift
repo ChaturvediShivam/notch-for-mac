@@ -14,6 +14,11 @@ enum SingleInstance {
 }
 
 enum Paths {
-    static let home = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".notch", isDirectory: true)
+    /// ~/.notch holds transcripts, clipboard history and the API token: owner-only (0700).
+    static let home: URL = {
+        let u = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".notch", isDirectory: true)
+        try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: u.path)
+        return u
+    }()
 }

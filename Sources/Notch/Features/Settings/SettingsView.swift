@@ -175,8 +175,11 @@ struct SettingsView: View {
                 Button {
                     if hidden { store.config.hiddenTabs.removeAll { $0 == t.title } } else { store.config.hiddenTabs.append(t.title) }
                 } label: {
-                    Image(systemName: Skin.canHide(t) ? t.symbol : "lock.fill")
+                    Image(systemName: t.symbol)
                         .font(.system(size: 11)).frame(width: 26, height: 24)
+                        .overlay(alignment: .bottomTrailing) {
+                            if !Skin.canHide(t) { Image(systemName: "lock.fill").font(.system(size: 6)).foregroundStyle(.white.opacity(0.6)).padding(2) }
+                        }
                         .foregroundStyle(hidden ? .white.opacity(0.25) : .white)
                         .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hidden ? .clear : Theme.control))
                 }

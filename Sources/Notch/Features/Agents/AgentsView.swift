@@ -11,7 +11,7 @@ struct AgentsView: View {
                 } else if !svc.installed {
                     VStack(spacing: 10) {
                         Hint("Approve Claude Code's Bash and file edits from the notch.\nAdds hooks to ~/.claude/settings.json (backed up first).")
-                        Button("Install Claude Code hooks") { svc.installHooks() }.buttonStyle(PillButtonStyle(tint: Theme.blue))
+                        Button("Install Claude Code hooks") { svc.installHooks() }.buttonStyle(PillButtonStyle(tint: Theme.accent))
                         if !svc.installMessage.isEmpty { Text(svc.installMessage).font(.system(size: 10)).foregroundStyle(.white.opacity(0.5)) }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

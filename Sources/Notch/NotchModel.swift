@@ -115,9 +115,9 @@ final class NotchModel: ObservableObject {
     }
 
     func step(_ delta: Int) {
-        let all = NotchTab.allCases
-        let i = min(max(tab.rawValue + delta, 0), all.count - 1)
-        setTab(all[i])
+        let all = Skin.visibleTabs
+        let cur = all.firstIndex(of: tab) ?? 0
+        setTab(all[min(max(cur + delta, 0), all.count - 1)])
     }
 
     /// Open on a tab and keep it open (hotkeys, palette "Open …", alerts).

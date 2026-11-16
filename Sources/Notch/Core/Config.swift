@@ -35,6 +35,11 @@ struct Config: Codable, Equatable {
     var clipboardLimit = 50
     var glass = true                 // Liquid Glass on macOS 26 for the open notch
     var opacity = 1.0                // open notch background, 0.3…1
+    var theme = "classic"            // Skin preset id
+    var edgeGlow = true              // glow around the open notch + hover glow
+    var hiddenTabs: [String] = []    // tab titles; core tabs stay unless master build
+    var accentHex = ""               // master build only: custom accent
+    var tintHex = ""                 // master build only: custom background wash
 
     init() {}
 
@@ -54,6 +59,8 @@ struct Config: Codable, Equatable {
         pinnedApps = v(.pinnedApps, z.pinnedApps); keepAwake = v(.keepAwake, z.keepAwake)
         launchAtLogin = v(.launchAtLogin, z.launchAtLogin); keepAlive = v(.keepAlive, z.keepAlive)
         clipboardLimit = v(.clipboardLimit, z.clipboardLimit); opacity = v(.opacity, z.opacity); glass = v(.glass, z.glass)
+        theme = v(.theme, z.theme); edgeGlow = v(.edgeGlow, z.edgeGlow); hiddenTabs = v(.hiddenTabs, z.hiddenTabs)
+        accentHex = v(.accentHex, z.accentHex); tintHex = v(.tintHex, z.tintHex)
     }
 }
 

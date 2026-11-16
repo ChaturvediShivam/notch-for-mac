@@ -34,3 +34,10 @@ Automated check: `NOTCH_SELFTEST=1 swift run Notch` (parsers). Layout smoke test
 - [x] Subscription CLIs: Codex (`codex exec`, read-only, ephemeral) and Gemini CLI (`gemini -p`)
 - [x] Tested: Codex flags/stdin/stderr drain with a stub; Ollama gemma4 answers in 0.7 s; missing key shows a clear setup message
 - Test by hand: Settings → Meeting answers menu and key Save/Remove; "From file…" with a PDF resume; a real ChatGPT/Gemini key; a real Codex and Gemini CLI login
+
+## M11 · Looks and editions
+- [x] Skins: Classic, Aurora, Sunset, Graphite, Neon; Captain (master only). Accent, colour wash, edge glow, one-shot glint on open, hover glow
+- [x] Settings → Look: theme swatches, glow, glass, transparency, hide tabs (store edition keeps Home, Meeting, Media, Settings)
+- [x] Editions: store by default; master with MASTER=1 or ~/.notch/master (custom hex colours, hide any tab)
+- [x] CPU with the themed notch open: WindowServer ~12%, Notch ~2% (same as before)
+- Test by hand: each theme with glass on/off; hiding tabs and scroll-switching; the glint on open

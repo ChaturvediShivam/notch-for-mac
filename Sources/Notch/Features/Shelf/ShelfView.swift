@@ -29,7 +29,7 @@ struct ShelfView: View {
                 }
             }
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(targeted ? Theme.blue : .clear, style: StrokeStyle(lineWidth: 2, dash: [6])))
+                .strokeBorder(targeted ? Theme.accent : .clear, style: StrokeStyle(lineWidth: 2, dash: [6])))
             .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
                 for p in providers {
                     _ = p.loadObject(ofClass: URL.self) { url, _ in

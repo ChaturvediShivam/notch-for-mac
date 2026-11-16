@@ -34,7 +34,7 @@ struct AudioView: View {
                             Image(systemName: d.isOutput ? "hifispeaker.fill" : "mic").frame(width: 18)
                             Text(d.name).font(Theme.caption).lineLimit(1)
                             Spacer()
-                            if d.id == selected { Image(systemName: "checkmark").foregroundStyle(Theme.blue) }
+                            if d.id == selected { Image(systemName: "checkmark").foregroundStyle(Theme.accent) }
                         }
                         .padding(.horizontal, 8).frame(height: 28)
                         .background(RoundedRectangle(cornerRadius: 8, style: .continuous)

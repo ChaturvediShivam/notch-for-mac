@@ -34,7 +34,7 @@ struct ClaudeView: View {
                     .padding(.horizontal, 10).frame(width: 280, height: 30)
                     .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.control))
                     .onSubmit { svc.saveKey(key); key = "" }
-                Button("Save") { svc.saveKey(key); key = "" }.buttonStyle(PillButtonStyle(tint: Theme.blue))
+                Button("Save") { svc.saveKey(key); key = "" }.buttonStyle(PillButtonStyle(tint: Theme.accent))
                     .disabled(key.isEmpty)
             }
         }
@@ -99,7 +99,7 @@ struct ClaudeView: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(m.role == "user" ? Theme.blue.opacity(0.85) : Theme.card))
+                .fill(m.role == "user" ? Theme.accent.opacity(0.85) : Theme.card))
             if m.role == "assistant" { Spacer(minLength: 40) }
         }
     }

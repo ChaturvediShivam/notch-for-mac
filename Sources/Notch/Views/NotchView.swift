@@ -21,7 +21,8 @@ struct NotchView: View {
         let shape = NotchShape(topRadius: topR, bottomRadius: botR)
 
         ZStack(alignment: .top) {
-            NotchBackground(shape: shape, open: open, glass: store.config.glass, opacity: store.config.opacity)
+            NotchBackground(shape: shape, open: open, glass: store.config.glass, opacity: store.config.opacity,
+                            skin: Skin.current, glow: store.config.edgeGlow)
             if let activity {
                 LiveActivityView(activity: activity, notchWidth: g.closedSize.width, height: g.closedSize.height)
                     .padding(.horizontal, topR)
@@ -41,6 +42,8 @@ struct NotchView: View {
         .clipShape(shape)
         .contentShape(shape)
         .shadow(color: .black.opacity(open ? 0.5 : 0), radius: 16, y: 8)
+        // Hover: a soft glow in the theme colour, like the notch is breathing out.
+        .shadow(color: (Skin.current.glow.first ?? .white).opacity(store.config.edgeGlow && model.hovering && !open ? 0.55 : 0), radius: 8)
         .onTapGesture { if !model.isOpen { model.setOpen(true) } }
         .contextMenu {
             Button("Quit Notch") { NSApp.terminate(nil) }
@@ -81,6 +84,10 @@ struct OpenPanel: View {
 
     private var header: some View {
         HStack(spacing: 8) {
+            let mark = Skin.current.mark
+            if !mark.isEmpty {
+                Image(systemName: mark).font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.accent)
+            }
             Text(model.palette ? "Search" : model.tab.title).font(Theme.title)
             Spacer(minLength: notchWidth + 16)      // keep clear of the camera housing
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
@@ -118,7 +125,7 @@ struct TabStrip: View {
 
     var body: some View {
         HStack(spacing: 1) {
-            ForEach(NotchTab.allCases) { t in
+            ForEach(Skin.visibleTabs) { t in
                 Button { model.setTab(t) } label: {
                     Image(systemName: t.symbol)
                         .font(.system(size: 12, weight: .medium))
@@ -127,7 +134,7 @@ struct TabStrip: View {
                         .background {
                             if model.tab == t {
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(Theme.control)
+                                    .fill(Skin.current.id == "classic" ? Theme.control : Theme.accent.opacity(0.3))
                                     .matchedGeometryEffect(id: "selection", in: ns)
                             }
                         }
@@ -171,14 +178,40 @@ struct TabContent: View {
 }
 
 /// Closed pill: solid black (matches the camera notch). Open: Liquid Glass on macOS 26
-/// (the transparency slider sets how dark the tint is), else black at that opacity.
+/// (the transparency slider sets how dark the tint is), else black at that opacity,
+/// then the skin's colour wash, edge glow, and one blade-glint sweep each time it opens.
 private struct NotchBackground: View {
     let shape: NotchShape, open: Bool, glass: Bool, opacity: Double
+    let skin: Skin, glow: Bool
+    @State private var glint: CGFloat = -0.4
+
     var body: some View {
-        if open, glass, #available(macOS 26, *) {
-            Color.clear.glassEffect(.regular.tint(.black.opacity(opacity * 0.6)), in: shape)
-        } else {
-            shape.fill(Color.black.opacity(open ? opacity : 1))
+        ZStack {
+            if open, glass, #available(macOS 26, *) {
+                Color.clear.glassEffect(.regular.tint((skin.tint.first ?? .black).opacity(opacity * 0.6)), in: shape)
+            } else {
+                shape.fill(Color.black.opacity(open ? opacity : 1))
+            }
+            if open, !skin.tint.isEmpty {
+                // Stays visible even when the panel is very see-through.
+                shape.fill(LinearGradient(colors: skin.tint.map { $0.opacity(max(0.45, 0.7 * opacity)) }, startPoint: .top, endPoint: .bottom))
+            }
+            if open, glow {
+                // ponytail: static gradient + one-shot sweep; a looping animation would redraw every frame (heat).
+                // Inner neon: a wide blurred stroke (drawn once, not animated) plus a crisp 1 px line.
+                shape.stroke(AngularGradient(colors: skin.glow, center: .center), lineWidth: 10)
+                    .blur(radius: 8).opacity(0.55)
+                shape.stroke(AngularGradient(colors: skin.glow, center: .center), lineWidth: 2)
+                    .opacity(0.9)
+                shape.stroke(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .white.opacity(0.9), location: 0.5),
+                                                    .init(color: .clear, location: 1)],
+                                            startPoint: UnitPoint(x: glint - 0.25, y: 0), endPoint: UnitPoint(x: glint + 0.25, y: 1)),
+                             lineWidth: 1.5)
+            }
+        }
+        .onChange(of: open) { o in
+            guard o else { glint = -0.4; return }
+            withAnimation(.easeInOut(duration: 0.9).delay(0.1)) { glint = 1.4 }
         }
     }
 }

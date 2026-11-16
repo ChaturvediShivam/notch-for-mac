@@ -50,7 +50,7 @@ struct TodayView: View {
                 VStack(spacing: 8) {
                     Text("See today's and tomorrow's events here.\nNotch reads your calendars on this Mac only.")
                         .font(Theme.caption).foregroundStyle(.white.opacity(0.55)).multilineTextAlignment(.center)
-                    Button("Show calendar") { svc.requestCalendar() }.buttonStyle(PillButtonStyle(tint: Theme.blue))
+                    Button("Show calendar") { svc.requestCalendar() }.buttonStyle(PillButtonStyle(tint: Theme.accent))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if svc.events.isEmpty {

@@ -6,7 +6,7 @@ struct StatsView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             VStack(spacing: 8) {
-                meter("CPU", s.cpu, String(format: "%.0f%%", s.cpu * 100), Theme.blue)
+                meter("CPU", s.cpu, String(format: "%.0f%%", s.cpu * 100), Theme.accent)
                 meter("Memory", s.memTotal > 0 ? s.memUsed / s.memTotal : 0,
                       "\(StatsService.bytes(s.memUsed)) of \(StatsService.bytes(s.memTotal))", Theme.green)
                 meter("Disk", s.diskTotal > 0 ? 1 - s.diskFree / s.diskTotal : 0,
@@ -73,7 +73,7 @@ struct StatsView: View {
                     i == 0 ? p.move(to: pt) : p.addLine(to: pt)
                 }
             }
-            .stroke(Theme.blue, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
+            .stroke(Theme.accent, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
         }
     }
 

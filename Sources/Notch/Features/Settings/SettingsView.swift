@@ -18,6 +18,8 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 10) {
+                group(Skin.isMaster ? "Look · master edition" : "Look") { look }
+
                 group("Privacy · network features") {
                     toggle("Synced lyrics (lrclib.net)", c.netLyrics)
                     toggle("Weather (open-meteo.com)", c.netWeather)
@@ -116,11 +118,6 @@ struct SettingsView: View {
                         }
                     }))
                     toggle("Switch sound to earphones/headphones when they're plugged in", c.autoSwitchOutput)
-                    toggle("Liquid Glass (macOS 26)", c.glass)
-                    row("Transparency") {
-                        Slider(value: c.opacity, in: 0.3...1).frame(width: 140)
-                        Text("\(Int(store.config.opacity * 100))%").font(Theme.caption).monospacedDigit().frame(width: 36)
-                    }
                     row("Clipboard history") {
                         Stepper("\(store.config.clipboardLimit) items", value: c.clipboardLimit, in: 10...500, step: 10)
                             .font(Theme.caption)
@@ -137,6 +134,55 @@ struct SettingsView: View {
             }
         }
         .onAppear { axTrusted = AXIsProcessTrusted() }
+    }
+
+    /// Themes, glow, glass, which tabs show. The store edition can't hide the core tabs or pick custom colours.
+    @ViewBuilder private var look: some View {
+        HStack(spacing: 10) {
+            ForEach(Skin.available) { k in
+                Button { store.config.theme = k.id } label: {
+                    VStack(spacing: 4) {
+                        ZStack {
+                            Circle().fill(k.tint.isEmpty ? AnyShapeStyle(Color.black)
+                                          : AnyShapeStyle(LinearGradient(colors: k.tint, startPoint: .top, endPoint: .bottom)))
+                            Circle().strokeBorder(AngularGradient(colors: k.glow, center: .center), lineWidth: 1.5)
+                            Image(systemName: k.mark.isEmpty ? "circle.fill" : k.mark)
+                                .font(.system(size: k.mark.isEmpty ? 6 : 11, weight: .semibold)).foregroundStyle(k.accent)
+                        }
+                        .frame(width: 34, height: 34)
+                        .overlay(Circle().strokeBorder(.white, lineWidth: store.config.theme == k.id ? 2 : 0).padding(-3))
+                        Text(k.name).font(.system(size: 10)).foregroundStyle(.white.opacity(store.config.theme == k.id ? 1 : 0.55))
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        toggle("Edge glow and hover glow", c.edgeGlow)
+        toggle("Liquid Glass (macOS 26)", c.glass)
+        row("Transparency") {
+            Slider(value: c.opacity, in: 0.3...1).frame(width: 140)
+            Text("\(Int(store.config.opacity * 100))%").font(Theme.caption).monospacedDigit().frame(width: 36)
+        }
+        if Skin.isMaster {
+            row("Accent colour") { field("hex, e.g. C9D1D9 (empty = theme)", c.accentHex) }
+            row("Background") { field("hex, e.g. 1F3A2B (empty = theme)", c.tintHex) }
+        }
+        Text("Tabs (tap to hide or show)" + (Skin.isMaster ? "" : " · Home, Meeting, Media and Settings always stay"))
+            .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+        HStack(spacing: 2) {
+            ForEach(NotchTab.allCases) { t in
+                let hidden = store.config.hiddenTabs.contains(t.title) && Skin.canHide(t)
+                Button {
+                    if hidden { store.config.hiddenTabs.removeAll { $0 == t.title } } else { store.config.hiddenTabs.append(t.title) }
+                } label: {
+                    Image(systemName: Skin.canHide(t) ? t.symbol : "lock.fill")
+                        .font(.system(size: 11)).frame(width: 26, height: 24)
+                        .foregroundStyle(hidden ? .white.opacity(0.25) : .white)
+                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hidden ? .clear : Theme.control))
+                }
+                .buttonStyle(.plain).disabled(!Skin.canHide(t)).help(t.title)
+            }
+        }
     }
 
     /// Bring your own model: pay with credits you already have, nothing billed by this app.
@@ -171,7 +217,7 @@ struct SettingsView: View {
                         Button("Save") {
                             Keychain.set(ClaudeRunner.keyName(id), aiKey.trimmingCharacters(in: .whitespacesAndNewlines))
                             aiKey = ""; savedKeys.insert(id)
-                        }.buttonStyle(PillButtonStyle(tint: Theme.blue))
+                        }.buttonStyle(PillButtonStyle(tint: Theme.accent))
                     } else if saved {
                         Button("Remove") { Keychain.set(ClaudeRunner.keyName(id), nil); savedKeys.remove(id) }.buttonStyle(PillButtonStyle())
                     }
@@ -197,7 +243,7 @@ struct SettingsView: View {
 
     private func toggle(_ label: String, _ b: Binding<Bool>) -> some View {
         Toggle(isOn: b) { Text(label).font(Theme.caption) }
-            .toggleStyle(.switch).controlSize(.mini)
+            .toggleStyle(.switch).controlSize(.mini).tint(Theme.accent.opacity(0.8))
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 

@@ -7,6 +7,8 @@ enum Theme {
     static let hover   = Color.white.opacity(0.32)
     static let pressed = Color.white.opacity(0.40)
 
+    /// The chosen skin's accent (Settings → Look).
+    @MainActor static var accent: Color { Skin.current.accent }
     static let blue   = Color(red: 0x0A / 255, green: 0x84 / 255, blue: 0xFF / 255)
     static let green  = Color(red: 0x30 / 255, green: 0xD1 / 255, blue: 0x58 / 255)
     static let orange = Color(red: 0xFF / 255, green: 0x9F / 255, blue: 0x0A / 255)

@@ -34,7 +34,7 @@ struct MeetingView: View {
                     .toggleStyle(.switch).controlSize(.mini).font(.system(size: 10))
                 if !mt.status.isEmpty { Text(mt.status).font(.system(size: 10)).foregroundStyle(Theme.orange).multilineTextAlignment(.center) }
                 if mt.needsScreenPermission {
-                    Button("Open Screen Recording settings") { mt.openScreenRecordingSettings() }.buttonStyle(PillButtonStyle(tint: Theme.blue))
+                    Button("Open Screen Recording settings") { mt.openScreenRecordingSettings() }.buttonStyle(PillButtonStyle(tint: Theme.accent))
                 }
                 if !mt.active && !mt.sessions.isEmpty { sessionList }
             }
@@ -52,7 +52,7 @@ struct MeetingView: View {
                     Text("\(draft.count) chars").font(.system(size: 9)).foregroundStyle(.white.opacity(0.35))
                     Button("Clear") { draft = ""; commit() }.buttonStyle(.plain).font(.system(size: 9)).foregroundStyle(.white.opacity(0.55))
                 }
-                Button("From file…") { mt.loadContextFile() }.buttonStyle(.plain).font(.system(size: 9)).foregroundStyle(Theme.blue)
+                Button("From file…") { mt.loadContextFile() }.buttonStyle(.plain).font(.system(size: 9)).foregroundStyle(Theme.accent)
             }
             ZStack(alignment: .topLeading) {
                 TextEditor(text: $draft)
@@ -146,7 +146,7 @@ struct MeetingView: View {
     private var meters: some View {
         HStack(spacing: 8) {
             meter("Them", mt.themLevel, Theme.orange)
-            meter("Me", mt.meLevel, Theme.blue)
+            meter("Me", mt.meLevel, Theme.accent)
         }
     }
 
@@ -207,7 +207,7 @@ struct MeetingView: View {
                     .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.control))
                     .onSubmit { mt.ask() }
                 HStack(spacing: 6) {
-                    Button("Samjhao") { mt.ask() }.buttonStyle(PillButtonStyle(tint: Theme.blue))
+                    Button("Samjhao") { mt.ask() }.buttonStyle(PillButtonStyle(tint: Theme.accent))
                     Button("Summary") { mt.summarize() }.buttonStyle(PillButtonStyle())
                     Spacer()
                     if mt.busy { ProgressView().controlSize(.mini) }
@@ -222,7 +222,7 @@ struct MeetingView: View {
             HStack(spacing: 4) {
                 let mine = s.title.hasPrefix(MeetingService.minePrefix)
                 Image(systemName: mine ? "person.fill.questionmark" : s.auto ? "questionmark.bubble.fill" : "sparkles")
-                    .font(.system(size: 9)).foregroundStyle(mine ? Theme.green : s.auto ? Theme.orange : Theme.blue)
+                    .font(.system(size: 9)).foregroundStyle(mine ? Theme.green : s.auto ? Theme.orange : Theme.accent)
                 Text(s.title).font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.6)).lineLimit(2)
             }
             if let f = s.failed {

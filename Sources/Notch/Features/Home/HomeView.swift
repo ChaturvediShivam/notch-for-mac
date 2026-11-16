@@ -85,7 +85,7 @@ struct HomeView: View {
 
     private func tint(_ t: HomeService.Tile) -> Color {
         switch t {
-        case .wifi, .bluetooth: Theme.blue
+        case .wifi, .bluetooth: Theme.accent
         case .darkMode: Theme.purple
         case .nightShift: Theme.orange
         case .keepAwake: Theme.green

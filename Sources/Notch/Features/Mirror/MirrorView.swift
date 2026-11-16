@@ -20,7 +20,7 @@ struct MirrorView: View {
                             DispatchQueue.main.async { status = AVCaptureDevice.authorizationStatus(for: .video) }
                         }
                     }
-                    .buttonStyle(PillButtonStyle(tint: Theme.blue))
+                    .buttonStyle(PillButtonStyle(tint: Theme.accent))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             default:

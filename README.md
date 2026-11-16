@@ -13,6 +13,7 @@ Native Swift · macOS 13+ · Apple Silicon · zero third-party dependencies · ~
 - **Your AI, your credits.** Use the subscription you already pay for (Claude Code, Codex, Gemini CLI) or an API key: Claude, ChatGPT, Gemini, Ollama (free, local) or any OpenAI-compatible API. No per-minute credits.
 - **Starts and stops with your calls.** Zoom, Google Meet, Teams, FaceTime, WhatsApp, Slack and more are detected from their microphone use.
 - **Private by default.** Speech recognition runs on the Mac, the notch is hidden from screen share and screenshots, transcripts delete themselves after 24 hours unless you keep them, and every network feature has its own switch.
+- **Make it yours.** Themes (Classic, Aurora, Sunset, Graphite, Neon) with a colour wash, edge glow and a blade-glint sweep on open; Liquid Glass and transparency; hide the tabs you don't use.
 - **20 tabs** of everyday tools: Claude chat, media with synced lyrics, system controls, clipboard, file shelf, calendar, weather and more.
 
 | | |
@@ -114,6 +115,8 @@ open build/Notch.app
 ```
 
 On first use macOS asks for Microphone, Speech Recognition and Screen & System Audio Recording (for the call audio). Features that need permissions must run from `build/Notch.app`, not `swift run`.
+
+**Editions:** `./scripts/make-app.sh` builds the store edition (themes, glow, hide optional tabs). `MASTER=1 ./scripts/make-app.sh` builds the master edition: custom accent and background colours, extra themes, hide any tab.
 
 **Checks:** `NOTCH_SELFTEST=1 swift run Notch` runs the self-test · `NOTCH_SNAPSHOT=<dir> swift run Notch` renders every tab to PNG · `~/.notch/meeting.log` records each meeting step with timings.
 

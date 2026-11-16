@@ -4,7 +4,15 @@
 # NOTARY_PROFILE=<notarytool keychain profile> also notarises and staples.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-swift build -c release
+# Edition: store (limited customisation) by default. Master (everything) with MASTER=1,
+# or automatically on a Mac that has ~/.notch/master. EDITION=store forces the store build.
+FLAGS=()
+if [ "${EDITION:-}" != "store" ] && { [ "${MASTER:-}" = 1 ] || [ -f "$HOME/.notch/master" ]; }; then
+  FLAGS=(-Xswiftc -DMASTER); echo "Edition: master"
+else
+  echo "Edition: store"
+fi
+swift build -c release ${FLAGS[@]+"${FLAGS[@]}"}
 APP=build/Notch.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

@@ -6,42 +6,40 @@ struct MeetingView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            transcriptCard
-            assistCard.frame(width: 260)
+            transcriptCard.frame(width: 250)
+            assistCard
         }
     }
 
     // MARK: Left: live transcript
 
+    /// No live transcript on screen (it's still captured for Claude and saved when you stop).
     private var transcriptCard: some View {
-        Card(title: mt.active ? "Live transcript" : "Meeting", trailing: AnyView(controls)) {
-            if mt.lines.isEmpty {
-                VStack(spacing: 6) {
-                    Text(mt.active ? "Listening… speak or let the meeting play." :
-                         "Start before the call: the other people (Mac's audio) and you (mic) are transcribed live as Them / Me.")
+        Card(title: "Meeting", trailing: AnyView(controls)) {
+            VStack(spacing: 6) {
+                if mt.active {
+                    Text("Listening · \(mt.lines.count) lines captured").font(Theme.caption).foregroundStyle(.white.opacity(0.7))
+                    meters
+                    Text("Transcript saves when you stop; it deletes after 24 h unless you keep it.")
+                        .font(.system(size: 10)).foregroundStyle(.white.opacity(0.4)).multilineTextAlignment(.center)
+                } else {
+                    Text("Start before the call. Questions from either side get an answer card by themselves.")
                         .font(Theme.caption).foregroundStyle(.white.opacity(0.55)).multilineTextAlignment(.center)
-                    if !mt.status.isEmpty { Text(mt.status).font(.system(size: 10)).foregroundStyle(Theme.orange).multilineTextAlignment(.center) }
-                    if mt.needsScreenPermission {
-                        Button("Open Screen Recording settings") { mt.openScreenRecordingSettings() }.buttonStyle(PillButtonStyle(tint: Theme.blue))
-                    }
-                    if mt.active { meters }
-                    Text("Works on speakers or earphones · listens only while Meeting mode is on · ⌃⌥M")
-                        .font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 5) {
-                            ForEach(mt.lines) { l in line(l).id(l.id) }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .onChange(of: mt.lines.last?.text) { _ in
-                        if let id = mt.lines.last?.id { proxy.scrollTo(id, anchor: .bottom) }
-                    }
+                TextField("Topic, e.g. AML/KYC interview", text: $store.config.meetingTopic)
+                    .textFieldStyle(.plain).font(Theme.caption)
+                    .padding(.horizontal, 8).frame(height: 24)
+                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.control))
+                    .help("Helps Claude understand misheard words and give answers for this subject")
+                Toggle("Start and stop with calls (Zoom, Meet, Teams…)", isOn: $store.config.meetingAuto)
+                    .toggleStyle(.switch).controlSize(.mini).font(.system(size: 10))
+                if !mt.status.isEmpty { Text(mt.status).font(.system(size: 10)).foregroundStyle(Theme.orange).multilineTextAlignment(.center) }
+                if mt.needsScreenPermission {
+                    Button("Open Screen Recording settings") { mt.openScreenRecordingSettings() }.buttonStyle(PillButtonStyle(tint: Theme.blue))
                 }
+                if !mt.active && !mt.sessions.isEmpty { sessionList }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -60,10 +58,6 @@ struct MeetingView: View {
                 }
                 .menuStyle(.borderlessButton).fixedSize()
             }
-            if let url = mt.savedTo, !mt.active {
-                Button("Open file") { NSWorkspace.shared.open(url) }.buttonStyle(PillButtonStyle())
-            }
-            if mt.active && !mt.lines.isEmpty { meters }
             if let s = mt.startedAt, mt.active {
                 Text(s, style: .timer).font(.system(size: 10).monospacedDigit()).foregroundStyle(Theme.red)
             }
@@ -71,6 +65,43 @@ struct MeetingView: View {
                 .buttonStyle(PillButtonStyle(tint: mt.active ? Theme.red : Theme.green))
                 .fixedSize()
         }
+    }
+
+    /// Past meetings: keep the useful ones, the rest delete themselves 24 h after saving.
+    private var sessionList: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Saved meetings · unkept ones delete after 24 h")
+                .font(.system(size: 9, weight: .semibold)).foregroundStyle(.white.opacity(0.4)).padding(.top, 6)
+            ScrollView {
+                VStack(spacing: 2) { ForEach(mt.sessions) { sessionRow($0) } }
+            }
+            .frame(maxHeight: 110)
+        }
+    }
+
+    private func sessionRow(_ s: MeetSession) -> some View {
+        HStack(spacing: 6) {
+            Button { NSWorkspace.shared.open(s.url) } label: {
+                Text(s.name.replacingOccurrences(of: "Meeting ", with: "")).font(Theme.caption).lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain).help("Open")
+            Text(s.kept ? "Kept" : left(s)).font(.system(size: 9).monospacedDigit())
+                .foregroundStyle(s.kept ? Theme.green : .white.opacity(0.45))
+            Button { mt.setKept(s, !s.kept) } label: {
+                Image(systemName: s.kept ? "bookmark.fill" : "bookmark").font(.system(size: 10)).frame(width: 22, height: 20)
+            }
+            .buttonStyle(GlyphButtonStyle(radius: 6)).help(s.kept ? "Stop keeping (deletes in 24 h)" : "Keep forever")
+            Button { mt.delete(s) } label: {
+                Image(systemName: "trash").font(.system(size: 10)).frame(width: 22, height: 20)
+            }
+            .buttonStyle(GlyphButtonStyle(radius: 6)).help("Delete now")
+        }
+    }
+
+    private func left(_ s: MeetSession) -> String {
+        let h = max(0, Int((MeetingService.lifetime - Date().timeIntervalSince(s.date)) / 3600))
+        return h < 1 ? "< 1 h left" : "\(h) h left"
     }
 
     /// Two tiny meters: is each side actually reaching us?
@@ -89,17 +120,6 @@ struct MeetingView: View {
                 Capsule().fill(tint).frame(width: 36 * v)
             }
             .frame(width: 36, height: 4)
-            .animation(.linear(duration: 0.2), value: v)
-        }
-    }
-
-    private func line(_ l: MeetLine) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(l.speaker).font(.system(size: 10, weight: .bold))
-                .foregroundStyle(l.speaker == "Me" ? Theme.blue : Theme.orange)
-                .frame(width: 34, alignment: .leading)
-            Text(l.text).font(Theme.caption).foregroundStyle(.white.opacity(l.final ? 0.9 : 0.6))
-                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -114,7 +134,7 @@ struct MeetingView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         if mt.suggestions.isEmpty {
                             Text(mt.autoAnswer
-                                 ? "When someone asks you something, a suggested reply appears here by itself. Lost? Press Samjhao (⌃⌥E)."
+                                 ? "Their question → what you can say. Your question → what a good answer looks like, plus a follow-up. Lost? Samjhao (⌃⌥E)."
                                  : "Auto answers are off. Press Samjhao (⌃⌥E) or type a question.")
                                 .font(Theme.caption).foregroundStyle(.white.opacity(0.45))
                         }
@@ -141,8 +161,9 @@ struct MeetingView: View {
     private func suggestion(_ s: Suggestion) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 4) {
-                Image(systemName: s.auto ? "questionmark.bubble.fill" : "sparkles")
-                    .font(.system(size: 9)).foregroundStyle(s.auto ? Theme.orange : Theme.blue)
+                let mine = s.title.hasPrefix(MeetingService.minePrefix)
+                Image(systemName: mine ? "person.fill.questionmark" : s.auto ? "questionmark.bubble.fill" : "sparkles")
+                    .font(.system(size: 9)).foregroundStyle(mine ? Theme.green : s.auto ? Theme.orange : Theme.blue)
                 Text(s.title).font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.6)).lineLimit(2)
             }
             if let f = s.failed {

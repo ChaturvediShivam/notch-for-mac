@@ -33,8 +33,8 @@ enum SelfTest {
         // Meeting question detection (English, Hinglish, Hindi)
         for q in ["What is the deadline for this project?", "Can you share the report by Monday",
                   "kya aap mujhe report bhej sakte hain", "ye feature kab tak ready hoga", "आप कब आएंगे",
-                  "how would you handle the migration"] { assert(MeetingService.isQuestion(q), q) }
-        for s in ["I will send it tomorrow.", "ok thanks", "humne budget discuss kiya", "The client approved the design."] {
+                  "how would you handle the migration", "A funnel account?"] { assert(MeetingService.isQuestion(q), q) }
+        for s in ["I will send it tomorrow.", "ok thanks", "humne budget discuss kiya", "The client approved the design.", "When everything is ready, we will launch."] {
             assert(!MeetingService.isQuestion(s), s)
         }
         if #available(macOS 26.0, *) {

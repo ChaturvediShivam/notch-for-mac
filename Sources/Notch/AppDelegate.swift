@@ -10,12 +10,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Services that listen in the background (routes register before the server starts).
             _ = AlertsService.shared
             _ = AgentsService.shared
+            LocalServer.shared.route("POST", "/meeting/toggle") { _ in
+                MeetingService.shared.toggle(); return (200, ["ok": true])
+            }
             LocalServer.shared.start()
             _ = MediaService.shared
             _ = AudioService.shared
             _ = ClipboardService.shared
             _ = HomeService.shared
             _ = AppsService.shared
+            // Unkept meeting transcripts go after 24 h: check now and every hour.
+            MeetingService.shared.refreshSessions()
+            CallWatch.shared.start()
+            Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
+                MainActor.assumeIsolated { MeetingService.shared.refreshSessions() }
+            }
         }
     }
 

@@ -3,6 +3,15 @@ import AVFoundation
 import ScreenCaptureKit
 import Speech
 
+/// A saved meeting file. Unkept ones are deleted 24 h after they were saved.
+struct MeetSession: Identifiable, Equatable {
+    let url: URL
+    let date: Date
+    let kept: Bool
+    var id: URL { url }
+    var name: String { url.deletingPathExtension().lastPathComponent }
+}
+
 struct Suggestion: Identifiable {
     let id = UUID()
     let title: String            // the question heard, or "Samjhao" / "Summary"
@@ -41,8 +50,10 @@ final class MeetingService: NSObject, ObservableObject {
     @Published var autoAnswer = true
     @Published private(set) var suggestions: [Suggestion] = []
     private var running: Task<Void, Never>?
+    private var runningSid: UUID?
     private var pending: (title: String, prompt: String, auto: Bool)?
-    private var answered = Set<UUID>()
+    /// Line id → how many words it had when answered (a line that grows a lot gets answered again).
+    private var answered: [UUID: Int] = [:]
 
     nonisolated(unsafe) private static var themPeak: Float = 0, mePeak: Float = 0
     nonisolated(unsafe) private static var themBuffers = 0, meBuffers = 0
@@ -53,23 +64,69 @@ final class MeetingService: NSObject, ObservableObject {
     /// Same transcriber, reachable from ScreenCaptureKit's audio queue.
     nonisolated(unsafe) private static var themTap: (any SpeechStream)?
     private var me: (any SpeechStream)?
-    private var questionWork: DispatchWorkItem?
+    private var questionWork: [String: DispatchWorkItem] = [:]
     private var stream: SCStream?
     private let engine = AVAudioEngine()
+    private var saveWork: DispatchWorkItem?
+
+    // MARK: Saved sessions (24 h unless kept)
+
+    @Published private(set) var sessions: [MeetSession] = []
+    static let lifetime: TimeInterval = 24 * 3600
+    private static var dir: URL { Paths.home.appendingPathComponent("transcripts") }
+    private static var keptDir: URL { dir.appendingPathComponent("Kept") }
+
+    /// Deletes unkept meetings older than 24 h, then lists what's left (newest first).
+    func refreshSessions() {
+        let fm = FileManager.default
+        func list(_ d: URL, kept: Bool) -> [MeetSession] {
+            ((try? fm.contentsOfDirectory(at: d, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [])
+                .filter { $0.lastPathComponent.hasPrefix("Meeting ") && $0.pathExtension == "md" }
+                .map { MeetSession(url: $0, date: (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date(), kept: kept) }
+        }
+        var temp = list(Self.dir, kept: false)
+        for s in temp where Date().timeIntervalSince(s.date) > Self.lifetime {
+            try? fm.removeItem(at: s.url); log("auto-deleted \(s.name)")
+        }
+        temp.removeAll { !fm.fileExists(atPath: $0.url.path) }
+        sessions = (temp + list(Self.keptDir, kept: true)).sorted { $0.date > $1.date }
+    }
+
+    /// Keep moves the file into Kept/ (never auto-deleted); un-keep moves it back and restarts its 24 h.
+    func setKept(_ s: MeetSession, _ keep: Bool) {
+        let fm = FileManager.default
+        let to = (keep ? Self.keptDir : Self.dir).appendingPathComponent(s.url.lastPathComponent)
+        try? fm.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? fm.moveItem(at: s.url, to: to)
+        if !keep { try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: to.path) }
+        if savedTo == s.url { savedTo = to }
+        refreshSessions()
+    }
+
+    func delete(_ s: MeetSession) {
+        try? FileManager.default.removeItem(at: s.url)
+        if savedTo == s.url { savedTo = nil }
+        refreshSessions()
+    }
 
     static let languages: [(id: String, name: String)] = [
         ("en-IN", "Hindi + English (Hinglish)"), ("hi-IN", "Hindi only (देवनागरी)"),
         ("en-US", "English (US)"), ("en-GB", "English (UK)"),
     ]
 
-    func toggle() { if active { stop() } else { Task { await start() } } }
+    func toggle() {
+        CallWatch.shared.userToggled(nowActive: !active)
+        if active { stop() } else { Task { await start() } }
+    }
 
     /// Step-by-step log for troubleshooting: ~/.notch/meeting.log
+    private static let logQueue = DispatchQueue(label: "notch.meeting.log", qos: .utility)
+
     func log(_ s: String) {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
         let line = "\(f.string(from: Date()))  \(s)\n"
         let url = Paths.home.appendingPathComponent("meeting.log")
-        DispatchQueue.global(qos: .utility).async {
+        Self.logQueue.async {   // serial: parallel appends were losing lines
             if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close() }
             else { try? line.write(to: url, atomically: true, encoding: .utf8) }
         }
@@ -81,6 +138,8 @@ final class MeetingService: NSObject, ObservableObject {
 
     func start() async {
         guard !active else { return }
+        saveWork?.perform(); saveWork?.cancel(); saveWork = nil   // stopped < 2 s ago: save that one first
+        lines = []; suggestions = []; savedTo = nil; answered = [:]
         log("— Start pressed. language=\(Store.shared.config.meetingLocale) output=\(AudioService.shared.outputs.first { $0.id == AudioService.shared.defaultOutput }?.name ?? "?") input=\(AudioService.shared.inputs.first { $0.id == AudioService.shared.defaultInput }?.name ?? "?")")
         if VoiceService.shared.mode == .dictating { VoiceService.shared.stopDictation() }
         if VoiceService.shared.mode == .listening { VoiceService.shared.stopListen() }
@@ -103,7 +162,7 @@ final class MeetingService: NSObject, ObservableObject {
             tr.onError = { [weak self] e in self?.status = e; self?.log("\(who) recognition error: \(e)") }
         }
         them = t; me = m
-        lines = []; savedTo = nil; suggestions = []; answered = []
+        lines = []; savedTo = nil; suggestions = []; answered = [:]
         if let e = await t.begin() {
             status = "Speech engine error: \(e)"; log("them engine FAILED: \(e)"); them = nil; me = nil; return
         }
@@ -167,10 +226,9 @@ final class MeetingService: NSObject, ObservableObject {
         startedAt = Date()
         Self.themBuffers = 0; Self.meBuffers = 0
         meterTimer?.invalidate()
-        meterTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
+        meterTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
             MainActor.assumeIsolated { MeetingService.shared.tickMeters() }
         }
-        NSSound(named: "Morse")?.play()
     }
 
     func stop() {
@@ -179,19 +237,25 @@ final class MeetingService: NSObject, ObservableObject {
         Task { try? await s?.stopCapture() }
         engine.stop(); engine.inputNode.removeTap(onBus: 0)
         try? engine.inputNode.setVoiceProcessingEnabled(false)
-        running?.cancel(); running = nil; pending = nil
-        questionWork?.cancel()
+        running?.cancel(); running = nil; runningSid = nil; pending = nil
+        questionWork.values.forEach { $0.cancel() }; questionWork = [:]
+        flushWork?.cancel(); flushWork = nil; volatile = [:]
         them?.stop(); me?.stop()
         meterTimer?.invalidate(); meterTimer = nil
         themLevel = 0; meLevel = 0
         log("stopped. lines=\(lines.count) themBuffers=\(Self.themBuffers) meBuffers=\(Self.meBuffers)")
         active = false
         // Let the last segments finish, then save.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.save() }
+        let w = DispatchWorkItem { [weak self] in self?.save() }
+        saveWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: w)
     }
 
     private func tickMeters() {
-        themLevel = Double(min(1, Self.themPeak * 4)); meLevel = Double(min(1, Self.mePeak * 4))
+        // Rounded to 0.1 so an unchanged level doesn't redraw the notch.
+        let t = (Double(min(1, Self.themPeak * 4)) * 10).rounded() / 10, m = (Double(min(1, Self.mePeak * 4)) * 10).rounded() / 10
+        if t != themLevel { themLevel = t }
+        if m != meLevel { meLevel = m }
         Self.themPeak *= 0.5; Self.mePeak *= 0.5
         if Date().timeIntervalSince(lastLog) > 10 {
             lastLog = Date()
@@ -229,34 +293,69 @@ final class MeetingService: NSObject, ObservableObject {
         return m
     }
 
+    /// Live (volatile) text arrives many times a second; redrawing the open notch for each one
+    /// was the main CPU/heat cost. Batch it to ~3 updates a second; final text goes straight in.
+    private var volatile: [UUID: (who: String, text: String)] = [:]
+    private var flushWork: DispatchWorkItem?
+
     private func upsert(_ id: UUID, _ who: String, _ text: String, _ final: Bool) {
+        if !final {
+            volatile[id] = (who, text)
+            if flushWork == nil {
+                let w = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.flushWork = nil
+                    let batch = self.volatile; self.volatile = [:]
+                    for (id, v) in batch { self.apply(id, v.who, v.text, false) }
+                }
+                flushWork = w
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: w)
+            }
+            return
+        }
+        volatile[id] = nil
+        log("heard (\(who), final): \(text.prefix(60))")
+        apply(id, who, text, true)
+    }
+
+    private func apply(_ id: UUID, _ who: String, _ text: String, _ final: Bool) {
         // On speakers the mic picks up the other side too: drop "Me" text that repeats "Them".
         if who == "Me", isEcho(text) {
             lines.removeAll { $0.id == id }
             return
         }
+        // Recogniser sometimes emits only punctuation (", , , ,"): not a line.
+        guard text.contains(where: \.isLetter) else { lines.removeAll { $0.id == id }; return }
         if let i = lines.lastIndex(where: { $0.id == id }) {
             lines[i].text = text; lines[i].final = final
         } else {
             lines.append(MeetLine(id: id, speaker: who, text: text, time: Date(), final: final))
         }
-        guard who == "Them", autoAnswer, active, !answered.contains(id), Self.isQuestion(text) else { return }
-        questionWork?.cancel()
+        questionWork[who]?.cancel()   // that speaker kept talking: re-judge from this text
+        // Questions from either side get a card: theirs → what I can say; mine → what a good answer is.
+        guard autoAnswer, active, needsAnswer(id, text), Self.isQuestion(text) else { return }
         if final {
-            answered.insert(id)
-            autoSuggest(for: text)
-        } else {
+            answered[id] = Self.words(text).count
+            autoSuggest(for: text, mine: who == "Me")
+        } else if Self.words(text).count >= 5 {
             // Don't wait for the sentence to be finalised: once the question text holds still
-            // for a moment, answer it.
+            // for a moment, answer it. Shorter fragments ("so can you please") wait for more.
             let w = DispatchWorkItem { [weak self] in
-                guard let self, !self.answered.contains(id),
-                      let line = self.lines.last(where: { $0.id == id }) else { return }
-                self.answered.insert(id)
-                self.autoSuggest(for: line.text)
+                guard let self, let line = self.lines.last(where: { $0.id == id }),
+                      self.needsAnswer(id, line.text) else { return }
+                self.answered[id] = Self.words(line.text).count
+                self.autoSuggest(for: line.text, mine: who == "Me")
             }
-            questionWork = w
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: w)
+            questionWork[who] = w
+            // "?" means the recogniser thinks the question is done; otherwise give the speaker longer.
+            DispatchQueue.main.asyncAfter(deadline: .now() + (text.contains("?") ? 0.7 : 1.5), execute: w)
         }
+    }
+
+    /// Not answered yet, or the question grew by 3+ words since (it was cut off when we answered).
+    private func needsAnswer(_ id: UUID, _ text: String) -> Bool {
+        guard let n = answered[id] else { return true }
+        return Self.words(text).count >= n + 3
     }
 
     nonisolated private static func words(_ s: String) -> [String] {
@@ -277,14 +376,17 @@ final class MeetingService: NSObject, ObservableObject {
     /// English and Hinglish/Hindi question cues. Speech recognition adds "?" for many English questions.
     nonisolated static func isQuestion(_ raw: String) -> Bool {
         let t = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.hasSuffix("?") && words(t).count >= 2 { return true }   // "A funnel account?"
         guard words(t).count >= 3 else { return false }
-        if t.hasSuffix("?") || t.contains("?") { return true }
+        if t.contains("?") { return true }
         let w = words(t)
         let starts = ["what", "why", "how", "when", "where", "who", "which", "whose", "can", "could", "would", "will",
                       "do", "does", "did", "is", "are", "was", "were", "should", "shall", "have", "has", "may"]
         // First word as spoken (one-letter words like "I" count here, unlike in words()).
         let first = t.components(separatedBy: CharacterSet.alphanumerics.inverted).first { !$0.isEmpty }
-        if let f = first, starts.contains(f) { return true }
+        // "When everything is ready, we will launch." The recogniser ends questions with "?", so a
+        // finished sentence ending in "." isn't one, whatever its first word.
+        if let f = first, starts.contains(f), !t.hasSuffix(".") { return true }
         let anywhere: Set<String> = ["kya", "kyun", "kyon", "kaise", "kab", "kaun", "kaunsa", "kitna", "kitne", "kitni",
                                      "kahan", "kidhar"]
         let hindi: [String] = ["क्या", "क्यों", "कैसे", "कब", "कौन", "कितना", "कितने", "कितनी", "कहाँ", "कहां"]
@@ -298,18 +400,61 @@ final class MeetingService: NSObject, ObservableObject {
 
     // MARK: Live suggestions
 
-    private func autoSuggest(for question: String) {
-        let prompt = """
-        I'm in a live meeting. Someone just asked me (speech-to-text, may have errors): "\(question)"
+    static let minePrefix = "You asked: "
+
+    /// Shared by every prompt: the topic, and how to treat speech-to-text mistakes.
+    private var context: String {
+        let topic = Store.shared.config.meetingTopic.trimmingCharacters(in: .whitespaces)
+        return (topic.isEmpty ? "" : "Meeting topic: \(topic).\n") + """
+        The text is live speech-to-text and often mishears words. Read every line in the meaning that fits \
+        the topic and the conversation (e.g. in a money-laundering talk "structured cat deposit" is "structured \
+        cash deposit", "SR" is "SAR"). If a question is still too garbled to know what was asked, don't guess: \
+        reply with only one line: "Unclear — ask them to repeat."
+        """
+    }
+
+    /// Same question again within a minute (people repeat themselves, "what if" vs "what is").
+    private func isRepeat(_ q: String) -> Bool {
+        let w = Set(Self.words(q))
+        guard !w.isEmpty else { return false }
+        return suggestions.contains { s in
+            guard s.auto, Date().timeIntervalSince(s.time) < 60 else { return false }
+            let o = Set(Self.words(s.title.replacingOccurrences(of: Self.minePrefix, with: "")))
+            return Double(w.intersection(o).count) / Double(max(w.count, o.count)) >= 0.7
+        }
+    }
+
+    private func autoSuggest(for question: String, mine: Bool) {
+        let prompt = mine ? """
+        I'm in a live meeting and I just asked them: "\(question)"
+        \(context)
 
         Recent transcript ("Them" = other people, "Me" = me):
-        \(transcript(lastMinutes: 4))
+        \(transcript(lastMinutes: 8))
 
-        Suggest what I can say right now: at most 3 short lines I can read aloud, natural and confident. \
-        If it needs facts I might not know, give a safe answer, then one line starting "Check:". Nothing else. \
-        Reply in the same language and style the question was asked in (Hinglish if they used Hinglish). No preamble.
+        Tell me what a strong answer to my question would contain, so I can judge their reply as they talk: \
+        at most 3 short plain sentences (under 60 words), the key points first. Then one last line starting "Follow-up:" with a sharp \
+        follow-up question I could ask next. No lists, no markdown, no preamble. Use the same language and style \
+        I asked in (Hinglish if I used Hinglish).
+        """ : """
+        I'm in a live meeting. Someone just asked me: "\(question)"
+        \(context)
+
+        Recent transcript ("Them" = other people, "Me" = me):
+        \(transcript(lastMinutes: 8))
+
+        Write exactly what I'd say out loud right now, like a real person talking in a meeting: first person, \
+        contractions, everyday words, 1 to 3 short sentences, the direct answer first. No lists, no markdown, \
+        no "Great question", no preamble. If it needs facts I might not know, keep it safe and add one last line \
+        starting "Check:". Use the same language and style they asked in (Hinglish if they used Hinglish).
         """
-        run(title: question, prompt: prompt, auto: true)
+        // A cut-off version of this question was answered already: replace that card.
+        let title = (mine ? Self.minePrefix : "") + question
+        let stale = suggestions.filter { $0.auto && title.hasPrefix($0.title) }.map(\.id)
+        if stale.isEmpty, isRepeat(question) { log("skipped repeat: \(question.prefix(60))"); return }
+        if let r = runningSid, stale.contains(r) { running?.cancel(); running = nil }
+        suggestions.removeAll { stale.contains($0.id) }
+        run(title: title, prompt: prompt, auto: true)
         if !NotchModel.shared.isOpen { NotchModel.shared.show(.meeting) }
     }
 
@@ -319,10 +464,14 @@ final class MeetingService: NSObject, ObservableObject {
         suggestions.insert(Suggestion(title: title, auto: auto), at: 0)
         if suggestions.count > 20 { suggestions.removeLast() }
         let sid = suggestions[0].id
+        runningSid = sid
         log("asking Claude (\(auto ? "auto" : "manual")): \(title.prefix(80))")
+        let asked = Date()
         running = Task { @MainActor in
+            var first = true
             do {
                 for try await chunk in ClaudeRunner.stream(prompt) {
+                    if first { first = false; self.log(String(format: "first words after %.2f s", Date().timeIntervalSince(asked))) }
                     if let i = self.suggestions.firstIndex(where: { $0.id == sid }) { self.suggestions[i].text += chunk }
                 }
             } catch {
@@ -330,7 +479,9 @@ final class MeetingService: NSObject, ObservableObject {
                 self.log("Claude error: \(error.localizedDescription)")
             }
             if let i = self.suggestions.firstIndex(where: { $0.id == sid }) { self.suggestions[i].done = true }
-            self.running = nil
+            self.log(String(format: "answer done after %.2f s", Date().timeIntervalSince(asked)))
+            guard self.runningSid == sid else { return }   // replaced by a newer answer meanwhile
+            self.running = nil; self.runningSid = nil
             if let p = self.pending { self.pending = nil; self.run(title: p.title, prompt: p.prompt, auto: p.auto) }
         }
     }
@@ -347,16 +498,23 @@ final class MeetingService: NSObject, ObservableObject {
             .map { "[\(f.string(from: $0.time))] \($0.speaker): \($0.text)" }.joined(separator: "\n")
     }
 
+    /// Writes transcript + answers, then clears the screen so the next meeting starts empty.
     private func save() {
+        saveWork = nil
         let text = transcript()
+        defer { lines = []; suggestions = []; answered = [:]; refreshSessions() }
         guard !text.isEmpty else { return }
-        let dir = Paths.home.appendingPathComponent("transcripts")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: Self.dir, withIntermediateDirectories: true)
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm"
-        let url = dir.appendingPathComponent("Meeting \(f.string(from: startedAt ?? Date())).md")
-        let header = "# Meeting \(f.string(from: startedAt ?? Date()))\n\nThem = other people, Me = you.\n\n"
-        try? (header + text + "\n").write(to: url, atomically: true, encoding: .utf8)
+        let url = Self.dir.appendingPathComponent("Meeting \(f.string(from: startedAt ?? Date())).md")
+        var md = "# Meeting \(f.string(from: startedAt ?? Date()))\n\nThem = other people, Me = you.\n\n" + text + "\n"
+        let answers = suggestions.reversed().filter { !$0.text.isEmpty }
+        if !answers.isEmpty {
+            md += "\n## Answers and notes\n" + answers.map { "\n### \($0.title)\n\n\($0.text)\n" }.joined()
+        }
+        try? md.write(to: url, atomically: true, encoding: .utf8)
         savedTo = url
+        log("saved \(url.lastPathComponent)")
     }
 
     // MARK: Ask Claude
@@ -370,7 +528,8 @@ final class MeetingService: NSObject, ObservableObject {
             ? "Explain in simple words what was just discussed, especially the last few lines. Define any jargon or terms. Then suggest one or two things I could say or ask next."
             : "My question: \(q)"
         let prompt = """
-        I'm in a live meeting right now. Recent transcript (speech-to-text, may have errors; "Them" = other people, "Me" = me):
+        I'm in a live meeting right now. \(context)
+        Recent transcript ("Them" = other people, "Me" = me):
 
         \(recent)
 
@@ -393,7 +552,7 @@ final class MeetingService: NSObject, ObservableObject {
         """)
     }
 
-    func clear() { lines = []; savedTo = nil }
+    func clear() { lines = []; suggestions = []; savedTo = nil }
 }
 
 extension MeetingService: SCStreamOutput {

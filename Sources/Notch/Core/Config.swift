@@ -21,6 +21,8 @@ struct Config: Codable, Equatable {
     var claudeModel = ""             // Claude Code model; empty = its default
     var claudeAPIModel = "claude-opus-5-5"
     var meetingLocale = "en-IN"
+    var meetingAuto = true           // start/stop Meeting mode with Zoom/Meet/Teams calls
+    var meetingTopic = ""            // e.g. "AML/KYC interview": helps Claude read misheard words
     var autoSwitchOutput = true      // plug in USB/Bluetooth earphones → sound moves there
     var claudeCwd = ""               // folder Claude Code runs in; empty = home
     var pinnedApps: [String] = []   // bundle paths
@@ -42,7 +44,7 @@ struct Config: Codable, Equatable {
         netClaude = v(.netClaude, z.netClaude); netLocalAPI = v(.netLocalAPI, z.netLocalAPI)
         city = v(.city, z.city); useLocation = v(.useLocation, z.useLocation); celsius = v(.celsius, z.celsius)
         watchlist = v(.watchlist, z.watchlist); leagues = v(.leagues, z.leagues)
-        apiPort = v(.apiPort, z.apiPort); claudeModel = v(.claudeModel, z.claudeModel); claudeCwd = v(.claudeCwd, z.claudeCwd); meetingLocale = v(.meetingLocale, z.meetingLocale)
+        apiPort = v(.apiPort, z.apiPort); claudeModel = v(.claudeModel, z.claudeModel); claudeCwd = v(.claudeCwd, z.claudeCwd); meetingLocale = v(.meetingLocale, z.meetingLocale); meetingTopic = v(.meetingTopic, z.meetingTopic); meetingAuto = v(.meetingAuto, z.meetingAuto)
         autoSwitchOutput = v(.autoSwitchOutput, z.autoSwitchOutput)
         claudeBackend = v(.claudeBackend, z.claudeBackend); claudeAPIModel = v(.claudeAPIModel, z.claudeAPIModel)
         pinnedApps = v(.pinnedApps, z.pinnedApps); keepAwake = v(.keepAwake, z.keepAwake)

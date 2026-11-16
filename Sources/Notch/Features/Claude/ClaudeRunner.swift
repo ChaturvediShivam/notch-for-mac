@@ -1,12 +1,38 @@
 import Foundation
+import os
 
-/// One-shot, streaming answer from whichever backend is selected (Claude Code or API),
-/// separate from the chat. Used by Meeting for live suggestions, so it's tuned for speed:
+/// One-shot, streaming answer for Meeting, separate from the chat, tuned for speed.
+/// Uses your own AI: Claude (Claude Code login or Anthropic key, as set in the Claude tab),
+/// a subscription CLI you're logged into (Codex = ChatGPT plan, Gemini CLI = Google login),
+/// or any OpenAI-compatible API: ChatGPT, Gemini, Ollama on this Mac, OpenRouter/Groq/LM Studio.
 /// Claude Code runs without your settings/hooks/MCP/tools and without saving a session.
 enum ClaudeRunner {
+    struct Provider { let id, name, base, hint: String; let needsKey: Bool; var cli = "" }
+    static let providers = [
+        Provider(id: "claude", name: "Claude (as in the Claude tab)", base: "", hint: "", needsKey: false),
+        Provider(id: "codex", name: "Codex CLI (ChatGPT plan login)", base: "", hint: "default (optional)", needsKey: false, cli: "codex"),
+        Provider(id: "gemini-cli", name: "Gemini CLI (Google login)", base: "", hint: "default (optional)", needsKey: false, cli: "gemini"),
+        Provider(id: "openai", name: "ChatGPT (OpenAI API key)", base: "https://api.openai.com/v1", hint: "e.g. gpt-5-mini", needsKey: true),
+        Provider(id: "gemini", name: "Gemini (Google AI Studio key)", base: "https://generativelanguage.googleapis.com/v1beta/openai", hint: "e.g. gemini-2.5-flash", needsKey: true),
+        Provider(id: "ollama", name: "Ollama (free, runs on this Mac)", base: "http://localhost:11434/v1", hint: "e.g. gemma4", needsKey: false),
+        Provider(id: "custom", name: "Other OpenAI-compatible (OpenRouter, Groq…)", base: "", hint: "model id", needsKey: true),
+    ]
+    /// Keychain account for a provider's key.
+    static func keyName(_ id: String) -> String { "ai-" + id }
+
     @MainActor
     static func stream(_ prompt: String) -> AsyncThrowingStream<String, Error> {
         let cfg = Store.shared.config
+        if let p = providers.first(where: { $0.id == cfg.meetingAI }), p.id != "claude" {
+            let model = (cfg.aiModels[p.id] ?? "").trimmingCharacters(in: .whitespaces)
+            if !p.cli.isEmpty { return cli(prompt, name: p.cli, model: model) }
+            let base = p.id == "custom" ? cfg.aiBaseURL : p.base
+            let key = Keychain.get(keyName(p.id))
+            if model.isEmpty || base.isEmpty || (p.needsKey && key == nil) {
+                return AsyncThrowingStream { $0.finish(throwing: err("Set up \(p.name) in Settings → Meeting answers")) }
+            }
+            return openAI(prompt, base: base, key: key, model: model)
+        }
         if cfg.claudeBackend == "api" {
             guard let key = ClaudeService.shared.apiKey else {
                 return AsyncThrowingStream { $0.finish(throwing: err("Add your Anthropic API key in the Claude tab")) }
@@ -95,6 +121,108 @@ enum ClaudeRunner {
                 } catch { cont.finish(throwing: error) }
             }
             cont.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// OpenAI-style /chat/completions with SSE: OpenAI, Gemini's compatible endpoint, Ollama, OpenRouter, Groq…
+    private static func openAI(_ prompt: String, base: String, key: String?, model: String) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { cont in
+            let task = Task {
+                guard let url = URL(string: base.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")) + "/chat/completions") else {
+                    cont.finish(throwing: err("Bad base URL")); return
+                }
+                var req = URLRequest(url: url, timeoutInterval: 120)
+                req.httpMethod = "POST"
+                if let key { req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
+                req.setValue("application/json", forHTTPHeaderField: "content-type")
+                req.httpBody = try? JSONSerialization.data(withJSONObject: [
+                    "model": model, "stream": true,
+                    "messages": [["role": "user", "content": prompt]],
+                ] as [String: Any])
+                do {
+                    let (bytes, resp) = try await URLSession.shared.bytes(for: req)
+                    if let h = resp as? HTTPURLResponse, h.statusCode != 200 {
+                        var data = Data()
+                        for try await b in bytes { data.append(b) }
+                        let j: Any? = try? JSONSerialization.jsonObject(with: data)
+                        throw err("HTTP \(h.statusCode): " + (j["error"]["message"].str ?? String(decoding: data.prefix(200), as: UTF8.self)))
+                    }
+                    for try await line in bytes.lines {
+                        guard line.hasPrefix("data:"),
+                              let o = try? JSONSerialization.jsonObject(with: Data(line.dropFirst(5).utf8)) as? [String: Any],
+                              let c = o["choices"] as? [[String: Any]],
+                              let t = (c.first?["delta"] as? [String: Any])?["content"] as? String, !t.isEmpty else { continue }
+                        cont.yield(t)
+                    }
+                    cont.finish()
+                } catch { cont.finish(throwing: error) }
+            }
+            cont.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// GUI apps don't get your shell PATH (npm/nvm/Homebrew), so check the usual spots, then ask your shell.
+    static func locate(_ name: String) async -> String? {
+        let h = NSHomeDirectory()
+        for d in ["/opt/homebrew/bin", "/usr/local/bin", "\(h)/.local/bin", "\(h)/.npm-global/bin", "\(h)/.bun/bin"]
+        where FileManager.default.isExecutableFile(atPath: "\(d)/\(name)") { return "\(d)/\(name)" }
+        let out = await Shell.run("/bin/zsh", ["-ilc", "command -v \(name)"]).out
+        let p = out.split(separator: "\n").last.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
+        return FileManager.default.isExecutableFile(atPath: p) ? p : nil
+    }
+
+    /// Subscription CLIs print only the final answer on stdout, so it arrives in one piece (no token streaming).
+    private static func cli(_ prompt: String, name: String, model: String) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { cont in
+            let p = Process()
+            let task = Task {
+                guard let exe = await locate(name) else {
+                    cont.finish(throwing: err("\(name) not found. Install it and log in once in Terminal.")); return
+                }
+                p.executableURL = URL(fileURLWithPath: exe)
+                var args: [String]
+                if name == "codex" {
+                    // Read-only, no session file, low effort: a quick one-shot answer, no tools touching files.
+                    args = ["exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only",
+                            "-c", "model_reasoning_effort=low"]
+                    if !model.isEmpty { args += ["-m", model] }
+                    args.append("-")                         // prompt from stdin
+                } else {
+                    args = ["-p", prompt]                    // gemini: prompt as argument, plain text out
+                    if !model.isEmpty { args += ["-m", model] }
+                }
+                p.arguments = args
+                p.currentDirectoryURL = FileManager.default.temporaryDirectory
+                var env = ProcessInfo.processInfo.environment
+                env["PATH"] = "\((exe as NSString).deletingLastPathComponent):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+                p.environment = env
+                let out = Pipe(), errp = Pipe(), inp = Pipe()
+                p.standardOutput = out; p.standardError = errp; p.standardInput = inp
+                out.fileHandleForReading.readabilityHandler = { h in
+                    let d = h.availableData
+                    if d.isEmpty { h.readabilityHandler = nil } else { cont.yield(String(decoding: d, as: UTF8.self)) }
+                }
+                let errTail = OSAllocatedUnfairLock(initialState: Data())   // keep draining stderr (progress) so the pipe never fills and blocks codex
+                errp.fileHandleForReading.readabilityHandler = { h in
+                    let d = h.availableData
+                    if d.isEmpty { h.readabilityHandler = nil } else { errTail.withLock { $0 = ($0 + d).suffix(2000) } }
+                }
+                p.terminationHandler = { proc in
+                    out.fileHandleForReading.readabilityHandler = nil
+                    if let rest = try? out.fileHandleForReading.readToEnd(), !rest.isEmpty { cont.yield(String(decoding: rest, as: UTF8.self)) }
+                    if proc.terminationStatus == 0 { cont.finish(); return }
+                    errp.fileHandleForReading.readabilityHandler = nil
+                    let e = String(decoding: errTail.withLock { $0 }, as: UTF8.self)
+                    let last = e.split(separator: "\n").last.map(String.init) ?? ""
+                    cont.finish(throwing: err("\(name) exited (\(proc.terminationStatus)). Logged in? \(last.prefix(160))"))
+                }
+                do {
+                    try p.run()
+                    if name == "codex" { inp.fileHandleForWriting.write(Data(prompt.utf8)) }
+                    try? inp.fileHandleForWriting.close()
+                } catch { cont.finish(throwing: error) }
+            }
+            cont.onTermination = { _ in task.cancel(); if p.isRunning { p.terminate() } }
         }
     }
 }

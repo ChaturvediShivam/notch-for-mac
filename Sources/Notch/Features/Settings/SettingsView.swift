@@ -8,6 +8,10 @@ struct SettingsView: View {
     @State private var loginItem = AppLifecycle.loginItemEnabled
     @State private var keepAlive = AppLifecycle.keepAliveEnabled
     @State private var axTrusted = AXIsProcessTrusted()
+    @State private var aiKey = ""
+    /// Read once: a Keychain lookup on every redraw made Settings stutter.
+    @State private var savedKeys = Set(ClaudeRunner.providers.map(\.id).filter { Keychain.get(ClaudeRunner.keyName($0)) != nil })
+    @State private var anthropicSaved = Keychain.get("anthropic") != nil
 
     private var c: Binding<Config> { $store.config }
 
@@ -24,6 +28,8 @@ struct SettingsView: View {
                         get: { store.config.netLocalAPI },
                         set: { store.config.netLocalAPI = $0; LocalServer.shared.start() }))
                 }
+
+                group("Meeting answers · use your own AI") { meetingAI }
 
                 group("Weather") {
                     row("City") { field("e.g. Mumbai", c.city) }
@@ -50,7 +56,7 @@ struct SettingsView: View {
                     row("Backend") { BackendSwitch() }
                     if store.config.claudeBackend == "api" {
                         row("API model") { field("claude-opus-5-5", c.claudeAPIModel) }
-                        Text(Keychain.get("anthropic") != nil ? "API key saved in Keychain" : "No API key yet (add it in the Claude tab)")
+                        Text(anthropicSaved ? "API key saved in Keychain" : "No API key yet (add it in the Claude tab)")
                             .font(.system(size: 10)).foregroundStyle(.white.opacity(0.5))
                     } else {
                         row("Model") { field("Claude Code default (e.g. opus, sonnet)", c.claudeModel) }
@@ -131,6 +137,52 @@ struct SettingsView: View {
             }
         }
         .onAppear { axTrusted = AXIsProcessTrusted() }
+    }
+
+    /// Bring your own model: pay with credits you already have, nothing billed by this app.
+    @ViewBuilder private var meetingAI: some View {
+        let id = store.config.meetingAI
+        let p = ClaudeRunner.providers.first { $0.id == id } ?? ClaudeRunner.providers[0]
+        row("AI") {
+            Menu(p.name) {
+                ForEach(ClaudeRunner.providers, id: \.id) { q in
+                    Button { store.config.meetingAI = q.id; aiKey = "" } label: {
+                        if q.id == id { Label(q.name, systemImage: "checkmark") } else { Text(q.name) }
+                    }
+                }
+            }
+            .menuStyle(.borderlessButton).font(Theme.caption).fixedSize()
+            Spacer()
+        }
+        if id != "claude" {
+            if id == "custom" { row("Base URL") { field("https://openrouter.ai/api/v1", c.aiBaseURL) } }
+            row("Model") {
+                field(p.hint, Binding(get: { store.config.aiModels[id] ?? "" },
+                                      set: { store.config.aiModels[id] = $0 }))
+            }
+            if p.needsKey {
+                let saved = savedKeys.contains(id)
+                row("API key") {
+                    SecureField(saved ? "Saved in Keychain" : "Paste key", text: $aiKey)
+                        .textFieldStyle(.plain).font(Theme.caption)
+                        .padding(.horizontal, 8).frame(height: 24)
+                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.control))
+                    if !aiKey.isEmpty {
+                        Button("Save") {
+                            Keychain.set(ClaudeRunner.keyName(id), aiKey.trimmingCharacters(in: .whitespacesAndNewlines))
+                            aiKey = ""; savedKeys.insert(id)
+                        }.buttonStyle(PillButtonStyle(tint: Theme.blue))
+                    } else if saved {
+                        Button("Remove") { Keychain.set(ClaudeRunner.keyName(id), nil); savedKeys.remove(id) }.buttonStyle(PillButtonStyle())
+                    }
+                }
+            }
+        }
+        Text(id == "claude" ? "Uses your Claude Code login or Anthropic key (Claude section above)."
+             : !p.cli.isEmpty ? "Uses your \(p.cli) login (your subscription, no API key). Install it and sign in once in Terminal; answers arrive whole, a few seconds slower than an API."
+             : id == "ollama" ? "Runs on this Mac with Ollama: free and offline, but slower than cloud models. Run `ollama pull <model>` first."
+             : "Your key, your credits: requests go straight from this Mac to the provider. Keys stay in the Keychain.")
+            .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
     }
 
     private func group<V: View>(_ title: String, @ViewBuilder _ content: () -> V) -> some View {

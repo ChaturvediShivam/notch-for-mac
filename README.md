@@ -10,6 +10,7 @@ Native Swift · macOS 13+ · Apple Silicon · zero third-party dependencies · ~
 
 - **Real-time bilingual meeting transcription & notes.** Transcribes the other side (Mac audio) and you (mic) at the same time, in English, Hindi or Hinglish, fully on-device.
 - **Answer cards for both sides.** They ask a question → a short, natural reply you can say. You ask a question → what a strong answer contains, plus a follow-up question. No clicks.
+- **Your AI, your credits.** Use the subscription you already pay for (Claude Code, Codex, Gemini CLI) or an API key: Claude, ChatGPT, Gemini, Ollama (free, local) or any OpenAI-compatible API. No per-minute credits.
 - **Starts and stops with your calls.** Zoom, Google Meet, Teams, FaceTime, WhatsApp, Slack and more are detected from their microphone use.
 - **Private by default.** Speech recognition runs on the Mac, the notch is hidden from screen share and screenshots, transcripts delete themselves after 24 hours unless you keep them, and every network feature has its own switch.
 - **20 tabs** of everyday tools: Claude chat, media with synced lyrics, system controls, clipboard, file shelf, calendar, weather and more.
@@ -27,7 +28,8 @@ Native Swift · macOS 13+ · Apple Silicon · zero third-party dependencies · ~
 | Languages | Hinglish (best for mixed talk), Hindi, English US/UK; Hindi is shown in Roman letters |
 | Question detection | English and Hinglish cues (`?`, what/how/can…, kya/kaise/kab…); waits 0.7 s with a "?" or 1.5 s without, re-answers a question that kept growing, skips repeats |
 | Answer cards | Claude gets the question, the meeting topic and the last 8 minutes; garbled questions get "Unclear — ask them to repeat" instead of a guess |
-| Topic box | e.g. "AML/KYC interview": helps Claude read misheard words ("structured cat deposit" → structured cash deposit) |
+| Context box | Paste anything (a topic, your resume, the job description, an agenda) or load a .txt/.md/.pdf: answers use it as facts about you, never invent experience, and fix misheard words ("structured cat deposit" → structured cash deposit) |
+| Bring your own AI | Subscription logins: Claude Code, Codex CLI (ChatGPT plan), Gemini CLI. Or API keys: Claude, ChatGPT, Gemini, Ollama on the Mac (free, offline) or any OpenAI-compatible API: you pay with credits you already have, no app credits |
 | Samjhao (⌃⌥E) and Summary | Explain the last few minutes in simple words, or summarise decisions and action items |
 | Auto start/stop | Starts 5 s after a call app opens the mic, stops 15 s after the call; a manual Stop is respected |
 | Saved sessions | Transcript + answers saved as Markdown on Stop; deleted after 24 h unless you press Keep |

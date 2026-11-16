@@ -1,7 +1,9 @@
 import AppKit
 import AVFoundation
 import ScreenCaptureKit
+import PDFKit
 import Speech
+import UniformTypeIdentifiers
 
 /// A saved meeting file. Unkept ones are deleted 24 h after they were saved.
 struct MeetSession: Identifiable, Equatable {
@@ -398,14 +400,38 @@ final class MeetingService: NSObject, ObservableObject {
         return false
     }
 
+    /// Fill the context box from a text, Markdown or PDF file (e.g. a resume).
+    func loadContextFile() {
+        let p = NSOpenPanel()
+        p.allowedContentTypes = [.plainText, .pdf, UTType(filenameExtension: "md") ?? .plainText]
+        p.level = .popUpMenu
+        NSApp.activate(ignoringOtherApps: true)
+        defer { NotchModel.shared.show(.meeting) }
+        guard p.runModal() == .OK, let url = p.url else { return }
+        let text = url.pathExtension.lowercased() == "pdf" ? PDFDocument(url: url)?.string
+                                                           : try? String(contentsOf: url, encoding: .utf8)
+        guard let text, !text.isEmpty else { status = "Couldn't read text from \(url.lastPathComponent)"; return }
+        let cur = Store.shared.config.meetingTopic.trimmingCharacters(in: .whitespacesAndNewlines)
+        Store.shared.config.meetingTopic = (cur.isEmpty ? "" : cur + "\n\n") + "\(url.lastPathComponent):\n" + text
+    }
+
     // MARK: Live suggestions
 
     static let minePrefix = "You asked: "
 
     /// Shared by every prompt: the topic, and how to treat speech-to-text mistakes.
     private var context: String {
-        let topic = Store.shared.config.meetingTopic.trimmingCharacters(in: .whitespaces)
-        return (topic.isEmpty ? "" : "Meeting topic: \(topic).\n") + """
+        // ponytail: hard cap keeps prompts fast; summarise first if people paste whole books.
+        let topic = String(Store.shared.config.meetingTopic.trimmingCharacters(in: .whitespacesAndNewlines).prefix(20_000))
+        return (topic.isEmpty ? "" : """
+        Background I gave you (topic, and maybe my resume, the job description, agenda or notes):
+        <<<
+        \(topic)
+        >>>
+        Use it for facts about me, my work and the subject. Never invent experience, numbers or names that \
+        aren't in it or in the transcript.
+
+        """) + """
         The text is live speech-to-text and often mishears words. Read every line in the meaning that fits \
         the topic and the conversation (e.g. in a money-laundering talk "structured cat deposit" is "structured \
         cash deposit", "SR" is "SAR"). If a question is still too garbled to know what was asked, don't guess: \

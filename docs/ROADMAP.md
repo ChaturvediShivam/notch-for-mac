@@ -27,3 +27,10 @@ Automated check: `NOTCH_SELFTEST=1 swift run Notch` (parsers). Layout smoke test
   - Test by hand: Open at login survives a reboot; kill -9 Notch with keep-alive on and it comes back; Quit does not come back
 - [x] M9 Meeting mode, round two: answer cards for your own questions too (strong answer + follow-up); live transcript kept off screen; Topic box and "read misheard words in context" prompt; "Unclear" instead of guessing; repeat questions skipped; 2-word questions with "?"; statements ending in "." ignored; wait 0.7 s with "?" else 1.5 s and re-answer a grown question; live text batched to ~3 updates/s (WindowServer 43% → 12%); silent start; timings in the meeting log; sessions deleted after 24 h unless kept; auto start/stop with call apps (`CallWatch`, CoreAudio per-process input flag); `/meeting/toggle` on the local API
   - Test by hand: a real Zoom/Meet call starts and stops Meeting mode by itself; Stop mid-call isn't undone; your own question gets a green card; Keep survives a day
+
+## M10 · Context box and bring-your-own AI
+- [x] Multi-line Context box (paste resume / JD / agenda, or load .txt/.md/.pdf), capped at 20k chars in prompts
+- [x] Meeting answers from Claude, ChatGPT, Gemini, Ollama or any OpenAI-compatible API (keys in Keychain)
+- [x] Subscription CLIs: Codex (`codex exec`, read-only, ephemeral) and Gemini CLI (`gemini -p`)
+- [x] Tested: Codex flags/stdin/stderr drain with a stub; Ollama gemma4 answers in 0.7 s; missing key shows a clear setup message
+- Test by hand: Settings → Meeting answers menu and key Save/Remove; "From file…" with a PDF resume; a real ChatGPT/Gemini key; a real Codex and Gemini CLI login

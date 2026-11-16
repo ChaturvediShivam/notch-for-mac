@@ -22,7 +22,10 @@ struct Config: Codable, Equatable {
     var claudeAPIModel = "claude-opus-5-5"
     var meetingLocale = "en-IN"
     var meetingAuto = true           // start/stop Meeting mode with Zoom/Meet/Teams calls
-    var meetingTopic = ""            // e.g. "AML/KYC interview": helps Claude read misheard words
+    var meetingTopic = ""            // pasted context (topic, resume, job description, agenda): grounds answers
+    var meetingAI = "claude"         // who writes meeting answers: claude (Claude tab setting), openai, gemini, ollama, custom
+    var aiModels: [String: String] = [:]  // model per provider above
+    var aiBaseURL = ""               // custom: any OpenAI-compatible endpoint (OpenRouter, Groq, LM Studio…)
     var autoSwitchOutput = true      // plug in USB/Bluetooth earphones → sound moves there
     var claudeCwd = ""               // folder Claude Code runs in; empty = home
     var pinnedApps: [String] = []   // bundle paths
@@ -45,6 +48,7 @@ struct Config: Codable, Equatable {
         city = v(.city, z.city); useLocation = v(.useLocation, z.useLocation); celsius = v(.celsius, z.celsius)
         watchlist = v(.watchlist, z.watchlist); leagues = v(.leagues, z.leagues)
         apiPort = v(.apiPort, z.apiPort); claudeModel = v(.claudeModel, z.claudeModel); claudeCwd = v(.claudeCwd, z.claudeCwd); meetingLocale = v(.meetingLocale, z.meetingLocale); meetingTopic = v(.meetingTopic, z.meetingTopic); meetingAuto = v(.meetingAuto, z.meetingAuto)
+        meetingAI = v(.meetingAI, z.meetingAI); aiModels = v(.aiModels, z.aiModels); aiBaseURL = v(.aiBaseURL, z.aiBaseURL)
         autoSwitchOutput = v(.autoSwitchOutput, z.autoSwitchOutput)
         claudeBackend = v(.claudeBackend, z.claudeBackend); claudeAPIModel = v(.claudeAPIModel, z.claudeAPIModel)
         pinnedApps = v(.pinnedApps, z.pinnedApps); keepAwake = v(.keepAwake, z.keepAwake)

@@ -3,6 +3,9 @@ import SwiftUI
 struct MeetingView: View {
     @ObservedObject private var mt = MeetingService.shared
     @ObservedObject private var store = Store.shared
+    /// Typed locally, saved 0.6 s after typing stops: writing config per keystroke redrew the whole notch.
+    @State private var draft = Store.shared.config.meetingTopic
+    @State private var saveWork: DispatchWorkItem?
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -26,11 +29,7 @@ struct MeetingView: View {
                     Text("Start before the call. Questions from either side get an answer card by themselves.")
                         .font(Theme.caption).foregroundStyle(.white.opacity(0.55)).multilineTextAlignment(.center)
                 }
-                TextField("Topic, e.g. AML/KYC interview", text: $store.config.meetingTopic)
-                    .textFieldStyle(.plain).font(Theme.caption)
-                    .padding(.horizontal, 8).frame(height: 24)
-                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.control))
-                    .help("Helps Claude understand misheard words and give answers for this subject")
+                contextBox
                 Toggle("Start and stop with calls (Zoom, Meet, Teams…)", isOn: $store.config.meetingAuto)
                     .toggleStyle(.switch).controlSize(.mini).font(.system(size: 10))
                 if !mt.status.isEmpty { Text(mt.status).font(.system(size: 10)).foregroundStyle(Theme.orange).multilineTextAlignment(.center) }
@@ -41,6 +40,45 @@ struct MeetingView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    /// Paste anything: a topic line, your resume, the job description, agenda, notes. Answers use it as facts.
+    private var contextBox: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text("Context").font(.system(size: 9, weight: .semibold)).foregroundStyle(.white.opacity(0.4))
+                Spacer()
+                if !draft.isEmpty {
+                    Text("\(draft.count) chars").font(.system(size: 9)).foregroundStyle(.white.opacity(0.35))
+                    Button("Clear") { draft = ""; commit() }.buttonStyle(.plain).font(.system(size: 9)).foregroundStyle(.white.opacity(0.55))
+                }
+                Button("From file…") { mt.loadContextFile() }.buttonStyle(.plain).font(.system(size: 9)).foregroundStyle(Theme.blue)
+            }
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $draft)
+                    .font(.system(size: 10)).scrollContentBackground(.hidden)
+                if draft.isEmpty {
+                    Text("Topic, or paste your resume, job description, agenda…").font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.3)).padding(.leading, 5).allowsHitTesting(false)
+                }
+            }
+            .padding(4).frame(height: 54)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.control))
+            .help("Answers use this as facts about you and the subject, and to fix misheard words")
+        }
+        .onChange(of: draft) { _ in
+            saveWork?.cancel()
+            let w = DispatchWorkItem { commit() }
+            saveWork = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: w)
+        }
+        .onChange(of: store.config.meetingTopic) { v in if v != draft, saveWork == nil { draft = v } }  // "From file…"
+        .onDisappear { commit() }
+    }
+
+    private func commit() {
+        saveWork?.cancel(); saveWork = nil
+        if store.config.meetingTopic != draft { store.config.meetingTopic = draft }
     }
 
     private var controls: some View {
@@ -125,10 +163,31 @@ struct MeetingView: View {
 
     // MARK: Right: live answers
 
+    /// Which AI writes the answers: your own subscription or key. Keys and models live in Settings.
+    private var aiMenu: some View {
+        let id = store.config.meetingAI
+        return Menu {
+            ForEach(ClaudeRunner.providers, id: \.id) { p in
+                Button { store.config.meetingAI = p.id } label: {
+                    if p.id == id { Label(p.name, systemImage: "checkmark") } else { Text(p.name) }
+                }
+            }
+            Divider()
+            Button("Keys and models… (Settings)") { NotchModel.shared.setTab(.settings) }
+        } label: {
+            Text("AI: " + (["claude": "Claude", "codex": "Codex", "gemini-cli": "Gemini CLI", "openai": "ChatGPT",
+                            "gemini": "Gemini", "ollama": "Ollama", "custom": "Custom"][id] ?? id)).font(.system(size: 10))
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+        .help("Use your own AI: Claude Code, Codex (ChatGPT plan), Gemini, Ollama or an API key")
+    }
+
     private var assistCard: some View {
-        Card(title: "Answers", trailing: AnyView(
+        Card(title: "Answers", trailing: AnyView(HStack(spacing: 8) {
+            aiMenu
             Toggle("Auto", isOn: $mt.autoAnswer).toggleStyle(.switch).controlSize(.mini).font(.system(size: 10))
-                .help("When someone asks a question, suggest a reply automatically (only while Meeting mode is on)"))) {
+                .help("When someone asks a question, suggest a reply automatically (only while Meeting mode is on)")
+        })) {
             VStack(spacing: 6) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {

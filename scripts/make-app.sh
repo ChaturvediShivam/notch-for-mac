@@ -36,7 +36,7 @@ if [ "$SIGN_ID" = "-" ] || [ "$SIGN_ID" = "Notch Local Signing" ]; then
   codesign --force --sign "$SIGN_ID" "$APP"
 else
   codesign --force --timestamp --options runtime --sign "$SIGN_ID" "$APP/Contents/MacOS/libNotchMediaRemote.dylib"
-  codesign --force --timestamp --options runtime --sign "$SIGN_ID" "$APP"
+  codesign --force --timestamp --options runtime --entitlements Resources/Notch.entitlements --sign "$SIGN_ID" "$APP"
   if [ -n "${NOTARY_PROFILE:-}" ]; then
     ditto -c -k --keepParent "$APP" build/Notch.zip
     xcrun notarytool submit build/Notch.zip --keychain-profile "$NOTARY_PROFILE" --wait

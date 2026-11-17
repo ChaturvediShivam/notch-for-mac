@@ -29,6 +29,24 @@ final class NotchPanel: NSPanel {
     override var canBecomeKey: Bool { allowsKey }
     override var canBecomeMain: Bool { false }
 
+    /// ⌘X/C/V/A/Z normally come from the Edit menu; an accessory app has no menu bar,
+    /// so text fields in the notch never got paste. Send them to the focused field directly.
+    override func performKeyEquivalent(with e: NSEvent) -> Bool {
+        let mods = e.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard mods == .command || mods == [.command, .shift] else { return super.performKeyEquivalent(with: e) }
+        let action: Selector? = switch (e.charactersIgnoringModifiers?.lowercased(), mods.contains(.shift)) {
+        case ("x", false): #selector(NSText.cut(_:))
+        case ("c", false): #selector(NSText.copy(_:))
+        case ("v", false): #selector(NSText.paste(_:))
+        case ("a", false): #selector(NSText.selectAll(_:))
+        case ("z", false): Selector(("undo:"))
+        case ("z", true): Selector(("redo:"))
+        default: nil
+        }
+        if let action, NSApp.sendAction(action, to: nil, from: self) { return true }
+        return super.performKeyEquivalent(with: e)
+    }
+
     // Let the window sit over the menu bar instead of being pushed below it.
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }

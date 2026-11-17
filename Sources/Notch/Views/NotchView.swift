@@ -41,9 +41,14 @@ struct NotchView: View {
         .frame(width: size.width + topR * 2, height: size.height)
         .clipShape(shape)
         .contentShape(shape)
-        .shadow(color: .black.opacity(open ? 0.5 : 0), radius: 16, y: 8)
-        // Hover: a soft glow in the theme colour, like the notch is breathing out.
-        .shadow(color: (Skin.current.glow.first ?? .white).opacity(store.config.edgeGlow && model.hovering && !open ? 0.55 : 0), radius: 8)
+        // Shadows hang off a plain shape behind the panel. On the whole view they forced every
+        // tab's content to be re-rendered offscreen on each frame of the open spring (lag).
+        .background {
+            shape.fill(.black)
+                .shadow(color: .black.opacity(open ? 0.5 : 0), radius: 16, y: 8)
+                // Hover: a soft glow in the theme colour, like the notch is breathing out.
+                .shadow(color: (Skin.current.glow.first ?? .white).opacity(store.config.edgeGlow && model.hovering && !open ? 0.55 : 0), radius: 8)
+        }
         .onTapGesture { if !model.isOpen { model.setOpen(true) } }
         .contextMenu {
             Button("Quit Notch") { NSApp.terminate(nil) }
@@ -183,7 +188,6 @@ struct TabContent: View {
 private struct NotchBackground: View {
     let shape: NotchShape, open: Bool, glass: Bool, opacity: Double
     let skin: Skin, glow: Bool
-    @State private var glint: CGFloat = -0.4
 
     var body: some View {
         ZStack {
@@ -198,20 +202,28 @@ private struct NotchBackground: View {
             }
             if open, glow {
                 // ponytail: static gradient + one-shot sweep; a looping animation would redraw every frame (heat).
-                // Inner neon: a wide blurred stroke (drawn once, not animated) plus a crisp 1 px line.
-                shape.stroke(AngularGradient(colors: skin.glow, center: .center), lineWidth: 10)
-                    .blur(radius: 8).opacity(0.55)
-                shape.stroke(AngularGradient(colors: skin.glow, center: .center), lineWidth: 2)
-                    .opacity(0.9)
-                shape.stroke(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .white.opacity(0.9), location: 0.5),
-                                                    .init(color: .clear, location: 1)],
-                                            startPoint: UnitPoint(x: glint - 0.25, y: 0), endPoint: UnitPoint(x: glint + 0.25, y: 1)),
-                             lineWidth: 1.5)
+                // Inner neon: soft layered strokes, no .blur — a Gaussian blur over the whole panel
+                // was redrawn on every frame of the open spring and the glint sweep.
+                let g = AngularGradient(colors: skin.glow, center: .center)
+                shape.stroke(g, lineWidth: 14).opacity(0.12)
+                shape.stroke(g, lineWidth: 7).opacity(0.22)
+                shape.stroke(g, lineWidth: 2).opacity(0.9)
+                Glint(shape: shape, open: open)
             }
         }
-        .onChange(of: open) { o in
-            guard o else { glint = -0.4; return }
-            withAnimation(.easeInOut(duration: 0.9).delay(0.1)) { glint = 1.4 }
-        }
+    }
+}
+
+/// The one-shot sweep has its own state, so animating it redraws one thin stroke, not the background.
+private struct Glint: View {
+    let shape: NotchShape, open: Bool
+    @State private var x: CGFloat = -0.4
+
+    var body: some View {
+        shape.stroke(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .white.opacity(0.9), location: 0.5),
+                                            .init(color: .clear, location: 1)],
+                                    startPoint: UnitPoint(x: x - 0.25, y: 0), endPoint: UnitPoint(x: x + 0.25, y: 1)),
+                     lineWidth: 1.5)
+            .onAppear { withAnimation(.easeInOut(duration: 0.9).delay(0.1)) { x = 1.4 } }
     }
 }

@@ -3,68 +3,133 @@ import SwiftUI
 struct MeetingView: View {
     @ObservedObject private var mt = MeetingService.shared
     @ObservedObject private var store = Store.shared
+    /// Which context box is showing: 0 CV, 1 Job, 2 My words.
+    @State private var field = 0
     /// Typed locally, saved 0.6 s after typing stops: writing config per keystroke redrew the whole notch.
-    @State private var draft = Store.shared.config.meetingTopic
+    @State private var draft = Store.shared.config.meetingCV
     @State private var saveWork: DispatchWorkItem?
+    @State private var showSaved = false
+
+    private var fields: [(key: WritableKeyPath<Config, String>, label: String, hint: String)] {
+        MeetingService.contextFields(interviewing: store.config.meetingRole == "interview")
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            transcriptCard.frame(width: 250)
+            transcriptCard.frame(width: 262)
             assistCard
         }
     }
 
-    // MARK: Left: live transcript
+    // MARK: Left: role, context, status
 
-    /// No live transcript on screen (it's still captured for Claude and saved when you stop).
     private var transcriptCard: some View {
         Card(title: "Meeting", trailing: AnyView(controls)) {
-            VStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 6) {
+                rolePicker
                 if mt.active {
-                    Text("Listening · \(mt.lines.count) lines captured").font(Theme.caption).foregroundStyle(.white.opacity(0.7))
-                    meters
-                    Text("Transcript saves when you stop; it deletes after 24 h unless you keep it.")
-                        .font(.system(size: 10)).foregroundStyle(.white.opacity(0.4)).multilineTextAlignment(.center)
-                } else {
-                    Text("Start before the call. Questions from either side get an answer card by themselves.")
-                        .font(Theme.caption).foregroundStyle(.white.opacity(0.55)).multilineTextAlignment(.center)
+                    HStack(spacing: 8) {
+                        Text("Listening · \(mt.lines.count) lines").font(.system(size: 10)).foregroundStyle(.white.opacity(0.7))
+                        Spacer(); meters
+                    }
                 }
-                contextBox
-                Toggle("Start and stop with calls (Zoom, Meet, Teams…)", isOn: $store.config.meetingAuto)
-                    .toggleStyle(.switch).controlSize(.mini).font(.system(size: 10))
-                if !mt.status.isEmpty { Text(mt.status).font(.system(size: 10)).foregroundStyle(Theme.orange).multilineTextAlignment(.center) }
+                if mt.active, let r = mt.resumed { resumeBanner(r) }
+                if !mt.status.isEmpty { Text(mt.status).font(.system(size: 10)).foregroundStyle(Theme.orange).lineLimit(2) }
                 if mt.needsScreenPermission {
                     Button("Open Screen Recording settings") { mt.openScreenRecordingSettings() }.buttonStyle(PillButtonStyle(tint: Theme.accent))
                 }
-                if !mt.active && !mt.sessions.isEmpty { sessionList }
+                if showSaved { sessionList } else { contextBox }
+                HStack(spacing: 6) {
+                    Toggle("Auto with calls", isOn: $store.config.meetingAuto)
+                        .toggleStyle(.switch).controlSize(.mini).font(.system(size: 10))
+                        .help("Start and stop with Zoom, Meet, Teams… calls")
+                    Spacer()
+                    if !mt.sessions.isEmpty {
+                        Button(showSaved ? "Context" : "Saved (\(mt.sessions.count))") { commit(); showSaved.toggle() }
+                            .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(Theme.accent)
+                            .help("Saved meetings: unkept ones delete after 24 h")
+                    }
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
     }
 
-    /// Paste anything: a topic line, your resume, the job description, agenda, notes. Answers use it as facts.
+    /// Rejoined within 30 min: this meeting carries on the last one. One tap starts empty instead.
+    private func resumeBanner(_ from: Date) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "arrow.uturn.forward.circle.fill").font(.system(size: 11)).foregroundStyle(Theme.green)
+            Text("Continuing from \(from.formatted(date: .omitted, time: .shortened))").font(.system(size: 10))
+            Spacer()
+            Button("New meeting") { mt.startFresh() }.buttonStyle(.plain).font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.accent).help("Forget the earlier part (it's already saved) and start empty")
+        }
+        .padding(.horizontal, 8).frame(height: 24)
+        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.green.opacity(0.15)))
+    }
+
+    /// Who is asking decides what the cards do.
+    private var rolePicker: some View {
+        HStack(spacing: 4) {
+            roleChip("answer", "I'm answering", "person.wave.2", "Their questions → what to say. For interviews you give, client calls, meetings.")
+            roleChip("interview", "I'm interviewing", "person.fill.questionmark", "Their answers → how good it was, and what to ask next.")
+        }
+    }
+
+    private func roleChip(_ id: String, _ name: String, _ icon: String, _ help: String) -> some View {
+        let on = store.config.meetingRole == id
+        return Button {
+            guard !on else { return }
+            commit(); store.config.meetingRole = id
+        } label: {
+            Label(name, systemImage: icon).font(.system(size: 10, weight: on ? .semibold : .regular))
+                .frame(maxWidth: .infinity).frame(height: 22)
+                .foregroundStyle(on ? .white : .white.opacity(0.55))
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(on ? Theme.accent.opacity(0.35) : Theme.control.opacity(0.6)))
+        }
+        .buttonStyle(.plain).help(help)
+    }
+
+    /// Three boxes: CV, job/agenda, and your own words. Answers use them as facts.
     private var contextBox: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
-                Text("Context").font(.system(size: 9, weight: .semibold)).foregroundStyle(.white.opacity(0.4))
-                Spacer()
-                if !draft.isEmpty {
-                    Text("\(draft.count) chars").font(.system(size: 9)).foregroundStyle(.white.opacity(0.35))
-                    Button("Clear") { draft = ""; commit() }.buttonStyle(.plain).font(.system(size: 9)).foregroundStyle(.white.opacity(0.55))
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 3) {
+                ForEach(fields.indices, id: \.self) { i in
+                    let filled = !store.config[keyPath: fields[i].key].isEmpty
+                    Button { select(i) } label: {
+                        HStack(spacing: 3) {
+                            Circle().fill(filled ? Theme.green : .white.opacity(0.2)).frame(width: 5, height: 5)
+                            Text(fields[i].label).font(.system(size: 10, weight: field == i ? .semibold : .regular)).lineLimit(1)
+                        }
+                        .padding(.horizontal, 7).frame(height: 20)
+                        .foregroundStyle(field == i ? .white : .white.opacity(0.5))
+                        .background(Capsule().fill(field == i ? Theme.control : .clear))
+                    }
+                    .buttonStyle(.plain)
                 }
-                Button("From file…") { mt.loadContextFile() }.buttonStyle(.plain).font(.system(size: 9)).foregroundStyle(Theme.accent)
             }
             ZStack(alignment: .topLeading) {
-                TextEditor(text: $draft)
-                    .font(.system(size: 10)).scrollContentBackground(.hidden)
+                TextEditor(text: $draft).font(.system(size: 10)).scrollContentBackground(.hidden)
                 if draft.isEmpty {
-                    Text("Topic, or paste your resume, job description, agenda…").font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.3)).padding(.leading, 5).allowsHitTesting(false)
+                    Text(fields[field].hint).font(.system(size: 10)).foregroundStyle(.white.opacity(0.3))
+                        .padding(.leading, 5).padding(.top, 1).allowsHitTesting(false)
                 }
             }
-            .padding(4).frame(height: 54)
+            .padding(4).frame(maxHeight: .infinity)
             .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.control))
-            .help("Answers use this as facts about you and the subject, and to fix misheard words")
+            HStack(spacing: 10) {
+                Button("Paste") {
+                    guard let t = NSPasteboard.general.string(forType: .string), !t.isEmpty else { return }
+                    draft = draft.isEmpty ? t : draft + "\n\n" + t; commit()
+                }
+                .help("Add what you copied")
+                Button("From file…") { commit(); mt.loadContextFile(into: fields[field].key) }
+                    .help("Text, Markdown or PDF (e.g. a resume)")
+                if !draft.isEmpty { Button("Clear") { draft = ""; commit() } }
+                Spacer()
+                if !draft.isEmpty { Text("\(draft.count)").font(.system(size: 9).monospacedDigit()).foregroundStyle(.white.opacity(0.35)) }
+            }
+            .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(Theme.accent)
         }
         .onChange(of: draft) { _ in
             saveWork?.cancel()
@@ -72,13 +137,21 @@ struct MeetingView: View {
             saveWork = w
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: w)
         }
-        .onChange(of: store.config.meetingTopic) { v in if v != draft, saveWork == nil { draft = v } }  // "From file…"
+        // "From file…" or Delete-all changed the store: show it.
+        .onChange(of: store.config[keyPath: fields[field].key]) { v in if v != draft, saveWork == nil { draft = v } }
         .onDisappear { commit() }
+    }
+
+    private func select(_ i: Int) {
+        commit()
+        field = i
+        draft = store.config[keyPath: fields[i].key]
     }
 
     private func commit() {
         saveWork?.cancel(); saveWork = nil
-        if store.config.meetingTopic != draft { store.config.meetingTopic = draft }
+        let k = fields[field].key
+        if store.config[keyPath: k] != draft { store.config[keyPath: k] = draft }
     }
 
     private var controls: some View {
@@ -107,14 +180,10 @@ struct MeetingView: View {
 
     /// Past meetings: keep the useful ones, the rest delete themselves 24 h after saving.
     private var sessionList: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Saved meetings · unkept ones delete after 24 h")
-                .font(.system(size: 9, weight: .semibold)).foregroundStyle(.white.opacity(0.4)).padding(.top, 6)
-            ScrollView {
-                VStack(spacing: 2) { ForEach(mt.sessions) { sessionRow($0) } }
-            }
-            .frame(maxHeight: 110)
+        ScrollView {
+            VStack(spacing: 2) { ForEach(mt.sessions) { sessionRow($0) } }
         }
+        .frame(maxHeight: .infinity)
     }
 
     private func sessionRow(_ s: MeetSession) -> some View {
@@ -183,7 +252,7 @@ struct MeetingView: View {
     }
 
     private var assistCard: some View {
-        Card(title: "Answers", trailing: AnyView(HStack(spacing: 8) {
+        Card(title: mt.interviewing ? "What to ask" : "Answers", trailing: AnyView(HStack(spacing: 8) {
             aiMenu
             Toggle("Auto", isOn: $mt.autoAnswer).toggleStyle(.switch).controlSize(.mini).font(.system(size: 10))
                 .help("When someone asks a question, suggest a reply automatically (only while Meeting mode is on)")
@@ -192,9 +261,10 @@ struct MeetingView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
                         if mt.suggestions.isEmpty {
-                            Text(mt.autoAnswer
-                                 ? "Their question → what you can say. Your question → what a good answer looks like, plus a follow-up. Lost? Samjhao (⌃⌥E)."
-                                 : "Auto answers are off. Press Samjhao (⌃⌥E) or type a question.")
+                            Text(!mt.autoAnswer ? "Auto cards are off. Press Samjhao (⌃⌥E) or type a question."
+                                 : mt.interviewing
+                                 ? "You ask → what a strong answer contains. They answer → a quick verdict and 2–3 follow-up questions. Fill the CV and Job boxes for sharper questions."
+                                 : "Their question → what you can say. Your question → what a good answer looks like. Fill CV, Job and My words for answers about you.")
                                 .font(Theme.caption).foregroundStyle(.white.opacity(0.45))
                         }
                         ForEach(mt.suggestions) { s in suggestion(s) }

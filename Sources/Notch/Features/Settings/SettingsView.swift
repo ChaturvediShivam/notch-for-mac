@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var keepAlive = AppLifecycle.keepAliveEnabled
     @State private var axTrusted = AXIsProcessTrusted()
     @State private var aiKey = ""
+    @State private var confirmWipe = false
     /// Read once: a Keychain lookup on every redraw made Settings stutter.
     @State private var savedKeys = Set(ClaudeRunner.providers.map(\.id).filter { Keychain.get(ClaudeRunner.keyName($0)) != nil })
     @State private var anthropicSaved = Keychain.get("anthropic") != nil
@@ -19,6 +20,8 @@ struct SettingsView: View {
         ScrollView {
             VStack(spacing: 10) {
                 group(Skin.isMaster ? "Look · master edition" : "Look") { look }
+
+                group("Privacy · data on this Mac") { dataControls }
 
                 group("Privacy · network features") {
                     toggle("Synced lyrics (lrclib.net)", c.netLyrics)
@@ -186,6 +189,36 @@ struct SettingsView: View {
                 .buttonStyle(.plain).disabled(!Skin.canHide(t)).help(t.title)
             }
         }
+    }
+
+    /// How long things stay, and erase-everything (DPDP / GDPR: storage limits, right to erasure).
+    @ViewBuilder private var dataControls: some View {
+        row("Clipboard history") { daysMenu(c.clipDays, [1, 7, 30]) }
+        row("Alerts") { daysMenu(c.alertDays, [7, 30, 90]) }
+        row("Kept meetings") { daysMenu(c.keptDays, [0, 30, 90, 365]) }
+        Text("Unkept meetings delete after 24 h, Listen after 7 days, screenshots after 1 day, logs after 7 days. Pinned clips and notes stay until you remove them. Everything stays on this Mac; nothing is sent to us.")
+            .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+        HStack {
+            Button("Open data folder") { NSWorkspace.shared.open(Paths.home) }.buttonStyle(PillButtonStyle())
+            Spacer()
+            Button(confirmWipe ? "Tap again to erase everything" : "Delete all my data") {
+                if confirmWipe { Retention.deleteAll(); confirmWipe = false; message = "All your data was deleted" }
+                else {
+                    confirmWipe = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 4) { confirmWipe = false }
+                }
+            }
+            .buttonStyle(PillButtonStyle(tint: Theme.red))
+            .help("Transcripts (kept too), clipboard, alerts, notes, Listen, screenshots, logs, web cache, meeting context. Settings and API keys stay.")
+        }
+    }
+
+    private func daysMenu(_ b: Binding<Int>, _ options: [Int]) -> some View {
+        func label(_ d: Int) -> String { d == 0 ? "Until I delete them" : d == 1 ? "1 day" : "\(d) days" }
+        return Menu(label(b.wrappedValue)) {
+            ForEach(options, id: \.self) { d in Button(label(d)) { b.wrappedValue = d; Retention.run() } }
+        }
+        .menuStyle(.borderlessButton).font(Theme.caption).fixedSize()
     }
 
     /// Bring your own model: pay with credits you already have, nothing billed by this app.

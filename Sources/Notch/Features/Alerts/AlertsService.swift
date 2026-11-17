@@ -45,5 +45,9 @@ final class AlertsService: ObservableObject {
     }
 
     func remove(_ a: NotchAlert) { alerts.removeAll { $0.id == a.id }; DataFile.save("alerts.json", alerts) }
+    func prune(before d: Date) {
+        guard alerts.contains(where: { $0.date < d }) else { return }
+        alerts.removeAll { $0.date < d }; DataFile.save("alerts.json", alerts)
+    }
     func clear() { alerts = []; DataFile.save("alerts.json", alerts) }
 }

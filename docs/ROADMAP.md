@@ -62,3 +62,10 @@ Before selling (needs you):
 - [ ] Developer ID signing + notarisation (scripts/make-app.sh supports SIGN_ID and NOTARY_PROFILE)
 - [ ] Keep master-only code out of the public repo or ship only store binaries
 - [ ] Test by hand: real Zoom/Meet auto start, hotkeys, Codex/Gemini CLI with real logins
+
+## M13 · Data lifetimes and erase (DPDP / GDPR)
+- [x] Retention: clipboard 7 d, alerts 30 d, Listen 7 d, screenshots 1 d, log 7 d, kept meetings optional limit; runs at launch + hourly
+- [x] Settings → "Privacy · data on this Mac": lifetimes, Open data folder, Delete all my data (tap twice)
+- [x] Entitlements for hardened runtime (mic, camera, Apple Events, calendar, location); tested with a hardened build
+- [x] Tested: planted old files/log lines/alerts were removed, new ones kept; delete-all left only settings, token, hooks
+- [x] Shared rule set for Mac + Windows in docs/PRIVACY.md

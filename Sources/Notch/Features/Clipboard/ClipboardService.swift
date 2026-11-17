@@ -68,5 +68,10 @@ final class ClipboardService: ObservableObject {
     }
 
     func remove(_ i: ClipItem) { items.removeAll { $0.id == i.id }; save() }
+    func prune(before d: Date) {
+        guard items.contains(where: { !$0.pinned && $0.date < d }) else { return }
+        items.removeAll { !$0.pinned && $0.date < d }; save()
+    }
+    func wipe() { items = []; save() }
     func clear() { items.removeAll { !$0.pinned }; save() }
 }

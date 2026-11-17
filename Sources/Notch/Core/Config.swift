@@ -22,7 +22,10 @@ struct Config: Codable, Equatable {
     var claudeAPIModel = "claude-opus-5-5"
     var meetingLocale = "en-IN"
     var meetingAuto = true           // start/stop Meeting mode with Zoom/Meet/Teams calls
-    var meetingTopic = ""            // pasted context (topic, resume, job description, agenda): grounds answers
+    var meetingTopic = ""            // "My words": your work/notes in plain words (answers phrase it professionally)
+    var meetingCV = ""               // resume: mine when answering, the candidate's when interviewing
+    var meetingJD = ""               // job description / agenda
+    var meetingRole = "answer"       // "answer" = I'm being asked (interview, meeting); "interview" = I'm asking
     var meetingAI = "claude"         // who writes meeting answers: claude (Claude tab setting), openai, gemini, ollama, custom
     var aiModels: [String: String] = [:]  // model per provider above
     var aiBaseURL = ""               // custom: any OpenAI-compatible endpoint (OpenRouter, Groq, LM Studio…)
@@ -33,6 +36,9 @@ struct Config: Codable, Equatable {
     var launchAtLogin = false
     var keepAlive = false
     var clipboardLimit = 50
+    var clipDays = 7                 // clipboard history lifetime (pinned items stay)
+    var alertDays = 30
+    var keptDays = 0                 // kept meetings: 0 = until you delete them
     var glass = true                 // Liquid Glass on macOS 26 for the open notch
     var opacity = 1.0                // open notch background, 0.3…1
     var theme = "classic"            // Skin preset id
@@ -53,12 +59,13 @@ struct Config: Codable, Equatable {
         city = v(.city, z.city); useLocation = v(.useLocation, z.useLocation); celsius = v(.celsius, z.celsius)
         watchlist = v(.watchlist, z.watchlist); leagues = v(.leagues, z.leagues)
         apiPort = v(.apiPort, z.apiPort); claudeModel = v(.claudeModel, z.claudeModel); claudeCwd = v(.claudeCwd, z.claudeCwd); meetingLocale = v(.meetingLocale, z.meetingLocale); meetingTopic = v(.meetingTopic, z.meetingTopic); meetingAuto = v(.meetingAuto, z.meetingAuto)
+        meetingCV = v(.meetingCV, z.meetingCV); meetingJD = v(.meetingJD, z.meetingJD); meetingRole = v(.meetingRole, z.meetingRole)
         meetingAI = v(.meetingAI, z.meetingAI); aiModels = v(.aiModels, z.aiModels); aiBaseURL = v(.aiBaseURL, z.aiBaseURL)
         autoSwitchOutput = v(.autoSwitchOutput, z.autoSwitchOutput)
         claudeBackend = v(.claudeBackend, z.claudeBackend); claudeAPIModel = v(.claudeAPIModel, z.claudeAPIModel)
         pinnedApps = v(.pinnedApps, z.pinnedApps); keepAwake = v(.keepAwake, z.keepAwake)
         launchAtLogin = v(.launchAtLogin, z.launchAtLogin); keepAlive = v(.keepAlive, z.keepAlive)
-        clipboardLimit = v(.clipboardLimit, z.clipboardLimit); opacity = v(.opacity, z.opacity); glass = v(.glass, z.glass)
+        clipboardLimit = v(.clipboardLimit, z.clipboardLimit); clipDays = v(.clipDays, z.clipDays); alertDays = v(.alertDays, z.alertDays); keptDays = v(.keptDays, z.keptDays); opacity = v(.opacity, z.opacity); glass = v(.glass, z.glass)
         theme = v(.theme, z.theme); edgeGlow = v(.edgeGlow, z.edgeGlow); hiddenTabs = v(.hiddenTabs, z.hiddenTabs)
         accentHex = v(.accentHex, z.accentHex); tintHex = v(.tintHex, z.tintHex)
     }

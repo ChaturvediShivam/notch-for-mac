@@ -20,12 +20,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = HomeService.shared
             _ = AppsService.shared
             // Unkept meeting transcripts go after 24 h: check now and every hour.
-            MeetingService.shared.refreshSessions()
+            Retention.run()
             CallWatch.shared.start()
             // Artwork/weather/lyrics cache: capped; macOS evicts the oldest past 20 MB.
             URLCache.shared = URLCache(memoryCapacity: 4_000_000, diskCapacity: 20_000_000)
             Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
-                MainActor.assumeIsolated { MeetingService.shared.refreshSessions() }
+                MainActor.assumeIsolated { Retention.run() }
             }
         }
     }

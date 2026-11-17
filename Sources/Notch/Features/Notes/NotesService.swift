@@ -37,6 +37,8 @@ final class NotesService: ObservableObject {
         saveSoon()
     }
 
+    func wipe() { notes = [Note()]; selected = notes[0].id; saveSoon() }
+
     private func saveSoon() {
         saveWork?.cancel()
         let w = DispatchWorkItem { DataFile.save("notes.json", NotesService.shared.notes) }

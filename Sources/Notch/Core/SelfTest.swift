@@ -64,12 +64,25 @@ enum SelfTest {
         // Config: junk / wrong types fall back to defaults instead of failing.
         let bad = try? JSONDecoder().decode(Config.self, from: Data(#"{"opacity":"x","theme":5,"hiddenTabs":"Home","glass":true}"#.utf8))
         assert(bad?.opacity == 1.0 && bad?.theme == "classic" && bad?.hiddenTabs == [] && bad?.glass == true)
+        // Old configs (no CV/JD/role yet) keep their context in "My words" and start as "I'm answering".
+        let legacy = try? JSONDecoder().decode(Config.self, from: Data(#"{"meetingTopic":"my resume"}"#.utf8))
+        assert(legacy?.meetingTopic == "my resume" && legacy?.meetingCV == "" && legacy?.meetingRole == "answer")
+        assert(MeetingService.contextFields(interviewing: true)[0].label == "Candidate's CV")
         // Looks: core tabs can't be hidden in the store edition; Settings never.
         assert(!Skin.canHide(.settings))
         if !Skin.isMaster { assert(!Skin.canHide(.home) && Skin.available.allSatisfy { !$0.masterOnly }) }
         assert(Skin.canHide(.markets))
         _ = Color(hex: "zz"); _ = Color(hex: ""); _ = Color(hex: "#FFFFFFFFFFFFFFFFFF")
         if !Skin.isMaster { assert(MeetingService.redact("secret plan here", 60) == "[3 words]") }
+        // Retention: only files older than the cutoff go.
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("notch-retention-test")
+        try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        let old = tmp.appendingPathComponent("old"), new = tmp.appendingPathComponent("new")
+        FileManager.default.createFile(atPath: old.path, contents: Data()); FileManager.default.createFile(atPath: new.path, contents: Data())
+        try? FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -10 * 86_400)], ofItemAtPath: old.path)
+        Retention.deleteFiles(in: tmp, before: Date(timeIntervalSinceNow: -7 * 86_400))
+        assert(!FileManager.default.fileExists(atPath: old.path) && FileManager.default.fileExists(atPath: new.path))
+        try? FileManager.default.removeItem(at: tmp)
         print("selftest: all passed")
         exit(0)
     }

@@ -71,6 +71,33 @@ final class MeetingService: NSObject, ObservableObject {
     private let engine = AVAudioEngine()
     private var saveWork: DispatchWorkItem?
 
+    // MARK: Carry on after a dropped call
+
+    /// The meeting that just stopped, in memory only, so a call that drops and rejoins can carry on.
+    private var last: (lines: [MeetLine], suggestions: [Suggestion], startedAt: Date, ended: Date)?
+    static let resumeWindow: TimeInterval = 30 * 60
+    /// Set while this meeting carries on from an earlier one (its start time), for the "New meeting" choice.
+    @Published private(set) var resumed: Date?
+
+    /// Started again within 30 min of the last stop: pick up its transcript and answers. Else start empty.
+    private func beginTranscript() {
+        if let l = last, Date().timeIntervalSince(l.ended) < Self.resumeWindow {
+            lines = l.lines; suggestions = l.suggestions; resumed = l.startedAt
+            log("continuing the meeting from \(l.startedAt)")
+        } else {
+            lines = []; suggestions = []; resumed = nil
+        }
+        last = nil; savedTo = nil; answered = [:]
+    }
+
+    /// "New meeting": drop what was carried over (it's already saved) and start this one empty.
+    func startFresh() {
+        guard resumed != nil else { return }
+        lines = []; suggestions = []; answered = [:]; resumed = nil
+        if active { startedAt = Date() }
+        log("started fresh instead of continuing")
+    }
+
     // MARK: Saved sessions (24 h unless kept)
 
     @Published private(set) var sessions: [MeetSession] = []
@@ -91,7 +118,15 @@ final class MeetingService: NSObject, ObservableObject {
             try? fm.removeItem(at: s.url); log("auto-deleted \(s.name)")
         }
         temp.removeAll { !fm.fileExists(atPath: $0.url.path) }
-        sessions = (temp + list(Self.keptDir, kept: true)).sorted { $0.date > $1.date }
+        var kept = list(Self.keptDir, kept: true)
+        let keptDays = Store.shared.config.keptDays
+        if keptDays > 0 {
+            for s in kept where Date().timeIntervalSince(s.date) > Double(keptDays) * Retention.day {
+                try? fm.removeItem(at: s.url); log("auto-deleted kept \(s.name)")
+            }
+            kept.removeAll { !fm.fileExists(atPath: $0.url.path) }
+        }
+        sessions = (temp + kept).sorted { $0.date > $1.date }
     }
 
     /// Keep moves the file into Kept/ (never auto-deleted); un-keep moves it back and restarts its 24 h.
@@ -130,6 +165,30 @@ final class MeetingService: NSObject, ObservableObject {
         Skin.isMaster ? String(t.prefix(n)) : "[\(t.split(separator: " ").count) words]"
     }
 
+    /// Drops log lines older than the cutoff (lines start "yyyy-MM-dd").
+    static func trimLog(before cutoff: Date) {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+        let keepFrom = f.string(from: cutoff)
+        let url = Paths.home.appendingPathComponent("meeting.log")
+        logQueue.async {
+            guard let s = try? String(contentsOf: url, encoding: .utf8) else { return }
+            let lines = s.split(separator: "\n", omittingEmptySubsequences: false)
+            let kept = lines.filter { $0.count < 10 || !($0.prefix(4).allSatisfy(\.isNumber)) || String($0.prefix(10)) >= keepFrom }
+            if kept.count != lines.count { try? kept.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8) }
+        }
+    }
+
+    /// Delete all my data: every transcript (kept too), what's on screen, and the log.
+    func wipeAll() {
+        if active { stop() }
+        saveWork?.cancel(); saveWork = nil
+        lines = []; suggestions = []; answered = [:]; savedTo = nil; last = nil; resumed = nil
+        try? FileManager.default.removeItem(at: Self.dir)
+        let url = Paths.home.appendingPathComponent("meeting.log")
+        Self.logQueue.async { try? FileManager.default.removeItem(at: url) }
+        refreshSessions()
+    }
+
     func log(_ s: String) {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
         let line = "\(f.string(from: Date()))  \(s)\n"
@@ -153,11 +212,14 @@ final class MeetingService: NSObject, ObservableObject {
     func start() async {
         guard !active else { return }
         saveWork?.perform(); saveWork?.cancel(); saveWork = nil   // stopped < 2 s ago: save that one first
-        lines = []; suggestions = []; savedTo = nil; answered = [:]
+        beginTranscript()
         log("— Start pressed. language=\(Store.shared.config.meetingLocale) output=\(AudioService.shared.outputs.first { $0.id == AudioService.shared.defaultOutput }?.name ?? "?") input=\(AudioService.shared.inputs.first { $0.id == AudioService.shared.defaultInput }?.name ?? "?")")
         if VoiceService.shared.mode == .dictating { VoiceService.shared.stopDictation() }
         if VoiceService.shared.mode == .listening { VoiceService.shared.stopListen() }
-        NotchModel.shared.show(.meeting)
+        // Open the notch once setup is done: turning on echo cancellation blocks the main thread
+        // ~0.7 s, and opening first made that freeze land in the middle of the open animation.
+        // ponytail: still a 0.7 s main-thread stall; move the engine setup off-main if it's noticed.
+        defer { NotchModel.shared.show(.meeting) }
 
         // Permissions, asked the first time: Speech, Microphone, Screen Recording (for meeting audio).
         let speech: SFSpeechRecognizerAuthorizationStatus = await withCheckedContinuation { c in
@@ -176,7 +238,6 @@ final class MeetingService: NSObject, ObservableObject {
             tr.onError = { [weak self] e in self?.status = e; self?.log("\(who) recognition error: \(e)") }
         }
         them = t; me = m
-        lines = []; savedTo = nil; suggestions = []; answered = [:]
         if let e = await t.begin() {
             status = "Speech engine error: \(e)"; log("them engine FAILED: \(e)"); them = nil; me = nil; return
         }
@@ -237,7 +298,7 @@ final class MeetingService: NSObject, ObservableObject {
         }
 
         active = true
-        startedAt = Date()
+        startedAt = resumed ?? Date()
         Self.themBuffers = 0; Self.meBuffers = 0
         meterTimer?.invalidate()
         meterTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
@@ -254,6 +315,7 @@ final class MeetingService: NSObject, ObservableObject {
         running?.cancel(); running = nil; runningSid = nil; pending = nil
         questionWork.values.forEach { $0.cancel() }; questionWork = [:]
         flushWork?.cancel(); flushWork = nil; volatile = [:]
+        probeWork?.cancel(); probeWork = nil; probedUpTo = nil
         them?.stop(); me?.stop()
         meterTimer?.invalidate(); meterTimer = nil
         themLevel = 0; meLevel = 0
@@ -346,6 +408,8 @@ final class MeetingService: NSObject, ObservableObject {
             lines.append(MeetLine(id: id, speaker: who, text: text, time: Date(), final: final))
         }
         questionWork[who]?.cancel()   // that speaker kept talking: re-judge from this text
+        // Interviewing: their talk is an answer to judge, not a question for me to answer.
+        if interviewing, who == "Them" { if autoAnswer, active { scheduleProbe() }; return }
         // Questions from either side get a card: theirs → what I can say; mine → what a good answer is.
         guard autoAnswer, active, needsAnswer(id, text), Self.isQuestion(text) else { return }
         if final {
@@ -413,7 +477,7 @@ final class MeetingService: NSObject, ObservableObject {
     }
 
     /// Fill the context box from a text, Markdown or PDF file (e.g. a resume).
-    func loadContextFile() {
+    func loadContextFile(into key: WritableKeyPath<Config, String> = \.meetingCV) {
         let p = NSOpenPanel()
         p.allowedContentTypes = [.plainText, .pdf, UTType(filenameExtension: "md") ?? .plainText]
         p.level = .popUpMenu
@@ -423,25 +487,45 @@ final class MeetingService: NSObject, ObservableObject {
         let text = url.pathExtension.lowercased() == "pdf" ? PDFDocument(url: url)?.string
                                                            : try? String(contentsOf: url, encoding: .utf8)
         guard let text, !text.isEmpty else { status = "Couldn't read text from \(url.lastPathComponent)"; return }
-        let cur = Store.shared.config.meetingTopic.trimmingCharacters(in: .whitespacesAndNewlines)
-        Store.shared.config.meetingTopic = (cur.isEmpty ? "" : cur + "\n\n") + "\(url.lastPathComponent):\n" + text
+        let cur = Store.shared.config[keyPath: key].trimmingCharacters(in: .whitespacesAndNewlines)
+        Store.shared.config[keyPath: key] = (cur.isEmpty ? "" : cur + "\n\n") + text
     }
 
     // MARK: Live suggestions
 
     static let minePrefix = "You asked: "
 
-    /// Shared by every prompt: the topic, and how to treat speech-to-text mistakes.
+    var interviewing: Bool { Store.shared.config.meetingRole == "interview" }
+
+    /// The three context boxes, labelled for the current role.
+    static func contextFields(interviewing: Bool) -> [(key: WritableKeyPath<Config, String>, label: String, hint: String)] {
+        [(\.meetingCV, interviewing ? "Candidate's CV" : "My CV",
+          interviewing ? "Paste the candidate's resume, or load a PDF" : "Paste your resume, or load a PDF"),
+         (\.meetingJD, "Job / agenda", "Paste the job description, or the meeting agenda"),
+         (\.meetingTopic, interviewing ? "What to check" : "My words",
+          interviewing ? "Skills to test, doubts about the candidate, must-ask questions…"
+                       : "Your work in plain words, any language. Answers turn it into professional language.")]
+    }
+
+    /// Shared by every prompt: the context boxes, and how to treat speech-to-text mistakes.
     private var context: String {
+        let c = Store.shared.config
         // ponytail: hard cap keeps prompts fast; summarise first if people paste whole books.
-        let topic = String(Store.shared.config.meetingTopic.trimmingCharacters(in: .whitespacesAndNewlines).prefix(20_000))
-        return (topic.isEmpty ? "" : """
-        Background I gave you (topic, and maybe my resume, the job description, agenda or notes):
-        <<<
-        \(topic)
-        >>>
-        Use it for facts about me, my work and the subject. Never invent experience, numbers or names that \
-        aren't in it or in the transcript.
+        func box(_ v: String, _ n: Int) -> String { String(v.trimmingCharacters(in: .whitespacesAndNewlines).prefix(n)) }
+        let cv = box(c.meetingCV, 12_000), jd = box(c.meetingJD, 6_000), notes = box(c.meetingTopic, 6_000)
+        var parts: [String] = []
+        if !cv.isEmpty { parts.append((interviewing ? "The candidate's resume" : "My resume") + ":\n<<<\n\(cv)\n>>>") }
+        if !jd.isEmpty { parts.append("The job description / agenda:\n<<<\n\(jd)\n>>>") }
+        if !notes.isEmpty {
+            parts.append(interviewing
+                ? "What I want to check in this interview:\n<<<\n\(notes)\n>>>"
+                : "My work and notes in my own rough words (any language). When you use them, say them in clear, " +
+                  "professional language, but never add facts that aren't there:\n<<<\n\(notes)\n>>>")
+        }
+        return (parts.isEmpty ? "" : parts.joined(separator: "\n\n") + """
+
+        Use this for facts about \(interviewing ? "the candidate, the role" : "me, my work") and the subject. \
+        Never invent experience, numbers or names that aren't in it or in the transcript.
 
         """) + """
         The text is live speech-to-text and often mishears words. Read every line in the meaning that fits \
@@ -449,6 +533,42 @@ final class MeetingService: NSObject, ObservableObject {
         cash deposit", "SR" is "SAR"). If a question is still too garbled to know what was asked, don't guess: \
         reply with only one line: "Unclear — ask them to repeat."
         """
+    }
+
+    // MARK: Interviewing: next questions after the candidate answers
+
+    private var probeWork: DispatchWorkItem?
+    private var probedUpTo: UUID?
+
+    /// The candidate stopped talking for 3 s: suggest what to ask next.
+    private func scheduleProbe() {
+        probeWork?.cancel()
+        let w = DispatchWorkItem { [weak self] in self?.probe() }
+        probeWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: w)
+    }
+
+    private func probe() {
+        // Their turn = their lines since I last spoke.
+        let lastMe = lines.lastIndex { $0.speaker == "Me" }
+        let turn = lines[(lastMe.map { $0 + 1 } ?? 0)...].filter { $0.speaker == "Them" }
+        guard let last = turn.last, last.id != probedUpTo,
+              turn.flatMap({ Self.words($0.text) }).count >= 12 else { return }
+        probedUpTo = last.id
+        let asked = lastMe.map { lines[$0].text } ?? ""
+        run(title: asked.isEmpty ? "Next questions" : "After: \(asked)", prompt: """
+        I'm interviewing a candidate live. \(context)
+        Recent transcript ("Me" = me, the interviewer; "Them" = the candidate):
+        \(transcript(lastMinutes: 8))
+
+        The candidate just finished answering. Give me:
+        1. One line judging the answer: strong / okay / weak, and why in a few words (vague? no numbers? \
+        didn't answer what I asked? doesn't match their resume?).
+        2. Two or three sharp follow-up questions I can ask next, the best first: dig into what was vague, \
+        check claims from the resume, or cover a skill from the job description not tested yet.
+        Short lines, no preamble, no markdown headers. Same language and style I asked in (Hinglish if I used Hinglish).
+        """, auto: true)
+        if !NotchModel.shared.isOpen { NotchModel.shared.show(.meeting) }
     }
 
     /// Same question again within a minute (people repeat themselves, "what if" vs "what is").
@@ -540,6 +660,7 @@ final class MeetingService: NSObject, ObservableObject {
     private func save() {
         saveWork = nil
         let text = transcript()
+        if !lines.isEmpty { last = (lines, suggestions, startedAt ?? Date(), Date()) }
         defer { lines = []; suggestions = []; answered = [:]; refreshSessions() }
         guard !text.isEmpty else { return }
         try? FileManager.default.createDirectory(at: Self.dir, withIntermediateDirectories: true)

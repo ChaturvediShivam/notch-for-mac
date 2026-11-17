@@ -8,7 +8,7 @@ import Foundation
 enum Retention {
     static let day: TimeInterval = 86_400
     /// Fixed lifetimes for things people don't curate.
-    static let listenDays = 7.0, screenshotDays = 1.0, logDays = 7.0
+    static let listenDays = 7.0, screenshotDays = 1.0, logDays = 1.0   // log: the master build keeps heard text, so 24 h like transcripts
 
     /// At launch and every hour.
     static func run() {

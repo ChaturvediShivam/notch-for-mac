@@ -31,7 +31,7 @@
 	<key>NSCalendarsUsageDescription</key>
 	<string>Today shows your events for today and tomorrow.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Mirror shows a live camera preview in the notch. Nothing is recorded.</string>
+	<string>Mirror shows a live camera preview in the notch, and the meeting Delivery coach checks where your eyes look while you practise. Nothing is recorded.</string>
 	<key>NSLocationUsageDescription</key>
 	<string>Today uses your location for the weather (only if you turn it on in Settings).</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

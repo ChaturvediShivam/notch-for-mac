@@ -7,6 +7,7 @@ Goal: every feature of the Windows version that macOS allows, built natively.
 ## Stack
 - Swift Package (no Xcode project): `swift build`, `swift run`, `./scripts/make-app.sh` for `build/Notch.app`.
 - Checks: `NOTCH_SELFTEST=1 swift run Notch`; `NOTCH_SNAPSHOT=<dir>` renders every tab to PNG.
+- Lag: quit the app, then `NOTCH_BENCH=1 build/Notch.app/Contents/MacOS/Notch` (also `=tabs`, `=meeting`) prints main-thread stalls per step.
 - macOS 13+, Apple Silicon. AppKit `NSPanel` + SwiftUI views inside `NSHostingView`.
 - No third-party dependencies unless a milestone really needs one; ask first.
 

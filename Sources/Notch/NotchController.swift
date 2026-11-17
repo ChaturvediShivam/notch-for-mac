@@ -52,6 +52,7 @@ final class NotchController {
         }
         // NOTCH_SNAPSHOT=<dir> renders every tab to PNGs there and quits (layout smoke test, no screen permission needed).
         if let dir = ProcessInfo.processInfo.environment["NOTCH_SNAPSHOT"] { snapshotAll(to: URL(fileURLWithPath: dir)) }
+        if let b = ProcessInfo.processInfo.environment["NOTCH_BENCH"] { Bench.run(model, only: b == "1" ? nil : b) }
     }
 
     private func snapshotAll(to dir: URL) {

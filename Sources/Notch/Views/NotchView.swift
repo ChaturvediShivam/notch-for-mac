@@ -196,14 +196,21 @@ private struct NotchBackground: View {
             } else {
                 shape.fill(Color.black.opacity(open ? opacity : 1))
             }
-            if open, !skin.tint.isEmpty {
+            if open, !skin.tint.isEmpty || glow { decoration }
+        }
+    }
+
+    /// Wash + glow. Gradients on an animating shape were redrawn by CoreGraphics on the CPU every frame
+    /// of the open spring (the main cost of opening: ~150 ms CPU per open); drawingGroup draws them on the GPU.
+    private var decoration: some View {
+        ZStack {
+            if !skin.tint.isEmpty {
                 // Stays visible even when the panel is very see-through.
                 shape.fill(LinearGradient(colors: skin.tint.map { $0.opacity(max(0.45, 0.7 * opacity)) }, startPoint: .top, endPoint: .bottom))
             }
-            if open, glow {
+            if glow {
                 // ponytail: static gradient + one-shot sweep; a looping animation would redraw every frame (heat).
-                // Inner neon: soft layered strokes, no .blur — a Gaussian blur over the whole panel
-                // was redrawn on every frame of the open spring and the glint sweep.
+                // Inner neon: soft layered strokes, no .blur.
                 let g = AngularGradient(colors: skin.glow, center: .center)
                 shape.stroke(g, lineWidth: 14).opacity(0.12)
                 shape.stroke(g, lineWidth: 7).opacity(0.22)
@@ -211,6 +218,7 @@ private struct NotchBackground: View {
                 Glint(shape: shape, open: open)
             }
         }
+        .drawingGroup()
     }
 }
 

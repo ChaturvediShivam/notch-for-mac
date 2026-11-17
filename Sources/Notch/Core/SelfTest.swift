@@ -38,6 +38,15 @@ enum SelfTest {
         for s in ["I will send it tomorrow.", "ok thanks", "humne budget discuss kiya", "The client approved the design.", "When everything is ready, we will launch."] {
             assert(!MeetingService.isQuestion(s), s)
         }
+        // From the 17 Nov interview: missed asks, and my answers that got "You asked" cards.
+        for q in ["So please introduce yourself.", "Uh, I would like to know, Lou, about yourself.",
+                  "Um, tell me how comfortable are you with Excel and data modelling", "Walk me through your resume."] {
+            assert(MeetingService.isQuestion(q), q)
+        }
+        assert(!MeetingService.isQuestion("So I, I shortlist from the market map and what our sales team and customers tell me, then, Visit the top 23 checked"))
+        assert(!MeetingService.isQuestion("Where I did, uh, prep research, whether they are involved in any political", strict: true))
+        assert(MeetingService.isQuestion("Which segments is IMI focusing on first?", strict: true))
+        assert(!MeetingService.isQuestion("Okay, that's all, we'll let you know."))
         if #available(macOS 26.0, *) {
             let r = AnalyzerTranscriber.roman("क्या आप हैं")
             assert(r == "kya apa hain", r)
@@ -64,6 +73,19 @@ enum SelfTest {
         // Config: junk / wrong types fall back to defaults instead of failing.
         let bad = try? JSONDecoder().decode(Config.self, from: Data(#"{"opacity":"x","theme":5,"hiddenTabs":"Home","glass":true}"#.utf8))
         assert(bad?.opacity == 1.0 && bad?.theme == "classic" && bad?.hiddenTabs == [] && bad?.glass == true)
+        // Delivery coach: a 3 s silence that ends right after a card's words arrive is "waited for the card".
+        let t0 = Date()
+        let prog = [0.0, 0.5, 1.0, 4.0, 4.5, 5.0].map { t0.addingTimeInterval($0) }
+        let rep = MeetingService.deliveryReport(progress: prog, questionEnded: t0.addingTimeInterval(-1.2),
+                                                cardEvents: [t0.addingTimeInterval(3.5)],
+                                                words: "uh so i um built the market map for the cluster".split(separator: " ").map(String.init), gaze: nil)
+        assert(rep.pauses == 1 && rep.waited == 1 && rep.fillers == 2 && rep.text.contains("Started 1.2 s"), rep.text)
+        // Gaze: reading 4 lines = drift along, jump back 3 times = 3 sweeps; a still gaze = 0.
+        var fr: [GazeTracker.Frame] = [], tt = 0.0
+        for _ in 0..<4 { for k in 0..<6 { fr.append(.init(t: t0.addingTimeInterval(tt), face: true, away: false, h: 0.3 + Float(k) * 0.05, v: 0.5)); tt += 0.08 } }
+        assert(GazeTracker.summarize(fr, baseline: fr)?.sweeps == 3)
+        let still = (0..<30).map { GazeTracker.Frame(t: t0.addingTimeInterval(Double($0) * 0.08), face: true, away: false, h: 0.5, v: 0.5) }
+        assert(GazeTracker.summarize(still, baseline: still)?.sweeps == 0 && GazeTracker.summarize(still, baseline: still)?.level == 1)
         // Old configs (no CV/JD/role yet) keep their context in "My words" and start as "I'm answering".
         let legacy = try? JSONDecoder().decode(Config.self, from: Data(#"{"meetingTopic":"my resume"}"#.utf8))
         assert(legacy?.meetingTopic == "my resume" && legacy?.meetingCV == "" && legacy?.meetingRole == "answer")

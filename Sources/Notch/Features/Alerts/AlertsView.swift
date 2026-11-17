@@ -19,7 +19,8 @@ struct AlertsView: View {
                 Hint("Nothing yet. Scripts can POST to 127.0.0.1:\(Store.shared.config.apiPort)/notify,\nand Claude Code hooks land here too.")
             } else {
                 ScrollView {
-                    VStack(spacing: 6) {
+                    // Lazy: 100 alerts were all built at once on the first visit (~140 ms stall).
+                    LazyVStack(spacing: 6) {
                         ForEach(svc.alerts) { a in
                             HStack(alignment: .top, spacing: 10) {
                                 Image(systemName: a.source.contains("Claude") ? "sparkles" : "bell.fill")

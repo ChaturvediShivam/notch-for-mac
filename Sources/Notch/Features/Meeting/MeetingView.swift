@@ -9,6 +9,7 @@ struct MeetingView: View {
     @State private var draft = Store.shared.config.meetingCV
     @State private var saveWork: DispatchWorkItem?
     @State private var showSaved = false
+    @State private var confirmDelete: URL?
 
     private var fields: [(key: WritableKeyPath<Config, String>, label: String, hint: String)] {
         MeetingService.contextFields(interviewing: store.config.meetingRole == "interview")
@@ -27,6 +28,12 @@ struct MeetingView: View {
         Card(title: "Meeting", trailing: AnyView(controls)) {
             VStack(alignment: .leading, spacing: 6) {
                 rolePicker
+                if store.config.meetingRole != "interview" {
+                    Toggle("Delivery coach · eyes, pauses (camera)", isOn: $store.config.deliveryCoach)
+                        .toggleStyle(.switch).controlSize(.mini).font(.system(size: 10))
+                        .disabled(mt.active)
+                        .help("After each answer: how long you paused, whether you waited for a card, words per minute, uh/um, and where your eyes were (reading the notch?). The camera is analysed on this Mac and nothing is recorded. Turn on before Start.")
+                }
                 if mt.active {
                     HStack(spacing: 8) {
                         Text("Listening · \(mt.lines.count) lines").font(.system(size: 10)).foregroundStyle(.white.opacity(0.7))
@@ -71,8 +78,9 @@ struct MeetingView: View {
     /// Who is asking decides what the cards do.
     private var rolePicker: some View {
         HStack(spacing: 4) {
-            roleChip("answer", "I'm answering", "person.wave.2", "Their questions → what to say. For interviews you give, client calls, meetings.")
-            roleChip("interview", "I'm interviewing", "person.fill.questionmark", "Their answers → how good it was, and what to ask next.")
+            roleChip("answer", "Answering", "person.wave.2", "Live help: their questions → what you can say. Interviews you give, client calls, meetings.")
+            roleChip("practice", "Practice", "figure.mind.and.body", "Mock interview on a call: no answers to read out; after each of your answers, a score and a better way to say it.")
+            roleChip("interview", "Interview", "person.fill.questionmark", "You're the interviewer: their answers → a verdict and what to ask next.")
         }
     }
 
@@ -172,9 +180,19 @@ struct MeetingView: View {
             if let s = mt.startedAt, mt.active {
                 Text(s, style: .timer).font(.system(size: 10).monospacedDigit()).foregroundStyle(Theme.red)
             }
-            Button(mt.active ? "Stop" : "Start") { mt.toggle() }
-                .buttonStyle(PillButtonStyle(tint: mt.active ? Theme.red : Theme.green))
-                .fixedSize()
+            if !mt.active, let r = mt.resumable {
+                // Stopped a little while ago (dropped call?): rejoin it, or start a new one.
+                Button("Rejoin") { mt.startManually(fresh: false) }
+                    .buttonStyle(PillButtonStyle(tint: Theme.green)).fixedSize()
+                    .help("Carry on the meeting from \(r.formatted(date: .omitted, time: .shortened)): same transcript and answers")
+                Button("New") { mt.startManually(fresh: true) }
+                    .buttonStyle(PillButtonStyle()).fixedSize()
+                    .help("Start an empty meeting (the last one is already saved)")
+            } else {
+                Button(mt.active ? "Stop" : "Start") { mt.toggle() }
+                    .buttonStyle(PillButtonStyle(tint: mt.active ? Theme.red : Theme.green))
+                    .fixedSize()
+            }
         }
     }
 
@@ -199,10 +217,18 @@ struct MeetingView: View {
                 Image(systemName: s.kept ? "bookmark.fill" : "bookmark").font(.system(size: 10)).frame(width: 22, height: 20)
             }
             .buttonStyle(GlyphButtonStyle(radius: 6)).help(s.kept ? "Stop keeping (deletes in 24 h)" : "Keep forever")
-            Button { mt.delete(s) } label: {
-                Image(systemName: "trash").font(.system(size: 10)).frame(width: 22, height: 20)
+            // Kept meetings are only removed by you, on purpose: first tap arms, second deletes.
+            let armed = confirmDelete == s.url
+            Button {
+                if !s.kept || armed { mt.delete(s); confirmDelete = nil; return }
+                confirmDelete = s.url
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { if confirmDelete == s.url { confirmDelete = nil } }
+            } label: {
+                Image(systemName: armed ? "trash.fill" : "trash").font(.system(size: 10))
+                    .foregroundStyle(armed ? Theme.red : .white).frame(width: 22, height: 20)
             }
-            .buttonStyle(GlyphButtonStyle(radius: 6)).help("Delete now")
+            .buttonStyle(GlyphButtonStyle(radius: 6))
+            .help(s.kept ? (armed ? "Tap again to delete this kept meeting for good" : "Delete this kept meeting (asks again)") : "Delete now")
         }
     }
 
@@ -252,8 +278,10 @@ struct MeetingView: View {
     }
 
     private var assistCard: some View {
-        Card(title: mt.interviewing ? "What to ask" : "Answers", trailing: AnyView(HStack(spacing: 8) {
+        Card(title: mt.interviewing ? "What to ask" : mt.practicing ? "Feedback" : "Answers", trailing: AnyView(HStack(spacing: 8) {
             aiMenu
+            Toggle("Keywords", isOn: $store.config.keywordCards).toggleStyle(.switch).controlSize(.mini).font(.system(size: 10))
+                .help("Answer cards start with 3–4 keywords to glance at, so you talk in your own words instead of reading")
             Toggle("Auto", isOn: $mt.autoAnswer).toggleStyle(.switch).controlSize(.mini).font(.system(size: 10))
                 .help("When someone asks a question, suggest a reply automatically (only while Meeting mode is on)")
         })) {
@@ -262,9 +290,11 @@ struct MeetingView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         if mt.suggestions.isEmpty {
                             Text(!mt.autoAnswer ? "Auto cards are off. Press Samjhao (⌃⌥E) or type a question."
+                                 : mt.practicing
+                                 ? "Practice: answer out loud as if it's real. When you stop for 3 seconds you get a score, what to fix and a better way to say it. No answers shown while they ask."
                                  : mt.interviewing
                                  ? "You ask → what a strong answer contains. They answer → a quick verdict and 2–3 follow-up questions. Fill the CV and Job boxes for sharper questions."
-                                 : "Their question → what you can say. Your question → what a good answer looks like. Fill CV, Job and My words for answers about you.")
+                                 : "Their question → what you can say. Asked \"any questions for us?\" → good ones to ask. Your own questions get no card. Fill CV, Job and My words for answers about you.")
                                 .font(Theme.caption).foregroundStyle(.white.opacity(0.45))
                         }
                         ForEach(mt.suggestions) { s in suggestion(s) }
@@ -287,6 +317,26 @@ struct MeetingView: View {
         }
     }
 
+    /// "Points: a · b · c" on top in big accent type (glance, then talk); the full answer below, quieter.
+    @ViewBuilder private func answerText(_ t: String) -> some View {
+        let parts = t.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        if let first = parts.first, first.hasPrefix("Points:") {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(first.dropFirst("Points:".count).trimmingCharacters(in: .whitespaces))
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.accent)
+                    .fixedSize(horizontal: false, vertical: true)
+                if parts.count > 1 {
+                    Text(ClaudeView.markdown(parts[1].trimmingCharacters(in: .whitespacesAndNewlines)))
+                        .font(Theme.caption).foregroundStyle(.white.opacity(0.6)).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        } else {
+            Text(ClaudeView.markdown(t)).font(Theme.caption).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private func suggestion(_ s: Suggestion) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 4) {
@@ -300,8 +350,7 @@ struct MeetingView: View {
             } else if s.text.isEmpty {
                 ProgressView().controlSize(.mini)
             } else {
-                Text(ClaudeView.markdown(s.text)).font(Theme.caption).textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                answerText(s.text)
             }
         }
         .padding(8)

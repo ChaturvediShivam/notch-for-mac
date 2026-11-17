@@ -26,7 +26,7 @@ that would itself be collecting data.
 | Alerts | 30 days | 7 / 30 / 90 days |
 | Listen transcripts | 7 days | No |
 | Screen-region screenshots (ask Claude) | 1 day | No |
-| Troubleshooting log | 7 days, max 1 MB; store edition logs word counts, never speech | No |
+| Troubleshooting log | 24 hours, max 1 MB; store edition logs word counts, never speech | No |
 | Web cache (artwork, lyrics, weather) | Max 20 MB, oldest evicted | No |
 | Notes, meeting context box | Until the user deletes them (their own writing) | — |
 

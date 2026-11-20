@@ -18,7 +18,7 @@ struct StatsView: View {
                     Spacer()
                     Label("↓ \(StatsService.bytes(s.netIn))/s  ↑ \(StatsService.bytes(s.netOut))/s", systemImage: "network")
                 }
-                .font(.system(size: 11).monospacedDigit()).foregroundStyle(.white.opacity(0.75))
+                .font(.system(size: 12).monospacedDigit()).foregroundStyle(Theme.ink.opacity(0.75))
                 .padding(.horizontal, 10).frame(height: 30)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.card))
             }
@@ -31,7 +31,7 @@ struct StatsView: View {
                         HStack {
                             Text(p.0).font(Theme.caption).lineLimit(1)
                             Spacer()
-                            Text(String(format: "%.1f%%", p.1)).font(.system(size: 11).monospacedDigit()).foregroundStyle(.white.opacity(0.6))
+                            Text(String(format: "%.1f%%", p.1)).font(.system(size: 12).monospacedDigit()).foregroundStyle(Theme.ink.opacity(0.6))
                         }
                     }
                 }
@@ -46,7 +46,7 @@ struct StatsView: View {
             HStack {
                 Text(name).font(Theme.title)
                 Spacer()
-                Text(detail).font(.system(size: 11).monospacedDigit()).foregroundStyle(.white.opacity(0.6))
+                Text(detail).font(.system(size: 12).monospacedDigit()).foregroundStyle(Theme.ink.opacity(0.6))
             }
             GeometryReader { g in
                 ZStack(alignment: .leading) {

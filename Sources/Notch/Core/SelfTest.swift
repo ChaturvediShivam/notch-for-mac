@@ -47,6 +47,11 @@ enum SelfTest {
         assert(!MeetingService.isQuestion("Where I did, uh, prep research, whether they are involved in any political", strict: true))
         assert(MeetingService.isQuestion("Which segments is IMI focusing on first?", strict: true))
         assert(!MeetingService.isQuestion("Okay, that's all, we'll let you know."))
+        // From the 18 Nov interview: a lead-in before the question word, and "Are you" misheard as "I do".
+        assert(MeetingService.isQuestion("Okay, and how much, uh, are you expecting like"))
+        assert(MeetingService.isQuestion("I do comfortable with primary market research and field travel."))
+        assert(!MeetingService.isQuestion("I'm comfortable with that, we can move on."))
+        assert(!MeetingService.isQuestion("So I start with the clustering mapping of the area like from Pune"))
         if #available(macOS 26.0, *) {
             let r = AnalyzerTranscriber.roman("क्या आप हैं")
             assert(r == "kya apa hain", r)
@@ -73,6 +78,24 @@ enum SelfTest {
         // Config: junk / wrong types fall back to defaults instead of failing.
         let bad = try? JSONDecoder().decode(Config.self, from: Data(#"{"opacity":"x","theme":5,"hiddenTabs":"Home","glass":true}"#.utf8))
         assert(bad?.opacity == 1.0 && bad?.theme == "classic" && bad?.hiddenTabs == [] && bad?.glass == true)
+        // Fillers: picked by question kind, rotating wording.
+        assert(MeetingService.filler(for: "What are your salary expectations?", turn: 0).contains("numbers"))
+        assert(MeetingService.filler(for: "Why do you want to join us", turn: 1).contains("comes down"))
+        assert(MeetingService.filler(for: "Tell me about yourself", turn: 0).contains("quick picture"))
+        assert(TrackerService.gid("https://x/edit?gid=905551930#gid=905551930") == "905551930")
+        // Company: whole word, capitals-only names need capitals; new questions = not close to any prepared one.
+        let names = ["NEC India", "AHEAD", "Marsh", "micro1"]
+        assert(TrackerService.company(in: "Interview: NEC – Sr Executive", names: names) == "NEC India")
+        assert(TrackerService.company(in: "plan ahead, Marshall", names: names) == nil)
+        assert(TrackerService.company(in: "Hi, this is Priya from AHEAD", names: names) == "AHEAD")
+        let known = TrackerService.content("Tell me about your data-centre analysis")
+        assert(Double(TrackerService.content("Walk me through the data centre analysis you did").intersection(known).count) >= 2)
+        // Job tracker sheet: quoted CSV (commas, "" and new lines inside), sheet id from a link, follow-ups due.
+        let rows = TrackerService.csv("Company,Target role,Status,Follow-up date\n\"NEC, India\",\"Sr \"\"Exec\"\"\nBD\",Applied,11-Nov-2026\nOddup,Analyst,Rejected,12-Nov-2026\nEpoch,Researcher,Applied,30-Dec-2099\n")
+        assert(rows.count == 4 && rows[1] == ["NEC, India", "Sr \"Exec\"\nBD", "Applied", "11-Nov-2026"], "\(rows)")
+        let due = TrackerService.due(rows, now: Date(timeIntervalSince1970: 1_795_000_000))   // Nov 2026
+        assert(due.map(\.company) == ["NEC, India"], "\(due)")
+        assert(TrackerService.sheetID("https://docs.google.com/spreadsheets/d/abc_1-X/edit?usp=sharing") == "abc_1-X")
         // Delivery coach: a 3 s silence that ends right after a card's words arrive is "waited for the card".
         let t0 = Date()
         let prog = [0.0, 0.5, 1.0, 4.0, 4.5, 5.0].map { t0.addingTimeInterval($0) }
@@ -80,6 +103,10 @@ enum SelfTest {
                                                 cardEvents: [t0.addingTimeInterval(3.5)],
                                                 words: "uh so i um built the market map for the cluster".split(separator: " ").map(String.init), gaze: nil)
         assert(rep.pauses == 1 && rep.waited == 1 && rep.fillers == 2 && rep.text.contains("Started 1.2 s"), rep.text)
+        // Started 5 s after the question, 1 s after the card's first words: that's waiting for the card too.
+        let late = MeetingService.deliveryReport(progress: [5.0, 6, 7].map { t0.addingTimeInterval($0) }, questionEnded: t0,
+                                                 cardEvents: [t0.addingTimeInterval(4)], words: Array(repeating: "word", count: 12), gaze: nil)
+        assert(late.waited == 1 && late.text.contains("1.0 s after the card"), late.text)
         // Gaze: reading 4 lines = drift along, jump back 3 times = 3 sweeps; a still gaze = 0.
         var fr: [GazeTracker.Frame] = [], tt = 0.0
         for _ in 0..<4 { for k in 0..<6 { fr.append(.init(t: t0.addingTimeInterval(tt), face: true, away: false, h: 0.3 + Float(k) * 0.05, v: 0.5)); tt += 0.08 } }

@@ -22,6 +22,7 @@ struct Suggestion: Identifiable {
     var done = false
     var failed: String?
     let time = Date()
+    var filler = ""              // said out loud while the answer is being written (local, instant)
 }
 
 struct MeetLine: Identifiable, Equatable {
@@ -222,7 +223,11 @@ final class MeetingService: NSObject, ObservableObject {
 
     /// `fresh`: start empty even if the last meeting could be rejoined. Calls and the hotkey rejoin by default.
     func start(fresh: Bool = false) async {
-        guard !active else { return }
+        // `active` only turns true after the awaits below; a second Start in that gap (double tap, a call
+        // auto-starting) set up two audio engines at once and crashed the app (20 Nov). One setup at a time.
+        guard !active, !starting else { return }
+        starting = true
+        defer { starting = false }
         saveWork?.perform(); saveWork?.cancel(); saveWork = nil   // stopped < 2 s ago: save that one first
         beginTranscript(fresh: fresh)
         log("— Start pressed. mode=\(Store.shared.config.meetingRole) language=\(Store.shared.config.meetingLocale) output=\(AudioService.shared.outputs.first { $0.id == AudioService.shared.defaultOutput }?.name ?? "?") input=\(AudioService.shared.inputs.first { $0.id == AudioService.shared.defaultInput }?.name ?? "?")")
@@ -317,6 +322,8 @@ final class MeetingService: NSObject, ObservableObject {
 
         active = true
         startedAt = resumed ?? Date()
+        TrackerService.shared.refresh(force: true)   // latest salary / applications before the first answer
+        TodayService.shared.loadEvents()               // the calendar event tells which company this call is with
         if coaching { GazeTracker.shared.start(); log("delivery coach on (camera, nothing recorded)") }
         Self.themBuffers = 0; Self.meBuffers = 0
         meterTimer?.invalidate()
@@ -339,12 +346,31 @@ final class MeetingService: NSObject, ObservableObject {
         meterTimer?.invalidate(); meterTimer = nil
         themLevel = 0; meLevel = 0
         if GazeTracker.shared.running { finishTurn(); deliverySummary(); GazeTracker.shared.stop() }
+        reportToSheets()
         log("stopped. lines=\(lines.count) themBuffers=\(Self.themBuffers) meBuffers=\(Self.meBuffers)")
         active = false
         // Let the last segments finish, then save.
         let w = DispatchWorkItem { [weak self] in self?.save() }
         saveWork = w
         DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: w)
+    }
+
+    /// A real call I answered in (not practice, not interviewing): questions my Q&A sheet doesn't have yet go
+    /// on a card and into the sheet; a call of 5+ min with a known company marks it Interviewed in the tracker.
+    private func reportToSheets() {
+        guard Store.shared.config.meetingRole == "answer" else { return }
+        let heard = suggestions.filter { $0.auto && !$0.title.hasPrefix(Self.minePrefix) && $0.time >= (startedAt ?? .distantPast) }
+            .map(\.title).reversed()
+        let fresh = TrackerService.shared.newQuestions(Array(heard))
+        let firm = (startedAt.map { Date().timeIntervalSince($0) >= 300 } ?? false) ? callCompany : nil
+        if !fresh.isEmpty {
+            suggestions.insert(Suggestion(title: "New questions (not in your Q&A sheet)",
+                                          text: fresh.map { "• " + $0 }.joined(separator: "\n"), auto: false, done: true), at: 0)
+        }
+        log("after call: company=\(firm ?? "-") newQuestions=\(fresh.count)")
+        Task {
+            if let r = await TrackerService.shared.report(company: firm, questions: fresh) { status = r; log("sheets: \(r)") }
+        }
     }
 
     private func tickMeters() {
@@ -428,7 +454,7 @@ final class MeetingService: NSObject, ObservableObject {
             lines.append(MeetLine(id: id, speaker: who, text: text, time: Date(), final: final))
         }
         questionWork[who]?.cancel()   // that speaker kept talking: re-judge from this text
-        noteDelivery(who)
+        noteDelivery(who, text)
         guard autoAnswer, active else { return }
         // Interviewing: their talk is an answer to judge. Practice: my talk is an answer to coach.
         // Neither gets a "what to say" card.
@@ -491,25 +517,26 @@ final class MeetingService: NSObject, ObservableObject {
         let w = words(t)
         let starts = ["what", "why", "how", "when", "where", "who", "which", "whose", "can", "could", "would", "will",
                       "do", "does", "did", "is", "are", "was", "were", "should", "shall", "have", "has", "may"]
-        // First word as spoken (one-letter words like "I" count here, unlike in words()).
-        let first = t.components(separatedBy: CharacterSet.alphanumerics.inverted).first { !$0.isEmpty }
+        // Spoken words; the opening skips lead-ins, so "Okay, and how much…" starts with "how".
+        let opening = t.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+            .drop { ["so", "okay", "ok", "um", "uh", "and", "now", "then", "alright", "right", "please", "like", "well"].contains($0) }
         // "When everything is ready, we will launch." The recogniser ends questions with "?", so a
         // finished sentence ending in "." isn't one, whatever its first word.
-        if let f = first, starts.contains(f), !t.hasSuffix(".") { return true }
+        if let f = opening.first, starts.contains(f), !t.hasSuffix(".") { return true }
         let anywhere: Set<String> = ["kya", "kyun", "kyon", "kaise", "kab", "kaun", "kaunsa", "kitna", "kitne", "kitni",
                                      "kahan", "kidhar"]
         let hindi: [String] = ["क्या", "क्यों", "कैसे", "कब", "कौन", "कितना", "कितने", "कितनी", "कहाँ", "कहां"]
         if w.contains(where: anywhere.contains) || hindi.contains(where: t.contains) { return true }
         // Asks phrased as requests ("So please introduce yourself."). Only near the start of the line:
         // "…and what our customers tell me" is a statement, "Tell me about…" is a question.
-        let opening = (t.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
-            .drop { ["so", "okay", "ok", "um", "uh", "and", "now", "then", "alright", "right", "please", "like", "well"].contains($0) })
-            .prefix(8).joined(separator: " ")
+        let start = opening.prefix(8).joined(separator: " ")
+        // "Are you comfortable with…" often comes out as "I do comfortable with…"; "I'm comfortable with" is an answer.
+        if start.contains("comfortable with"), !["i m", "i am", "we re", "we are", "i was"].contains(where: start.hasPrefix) { return true }
         for phrase in ["can you", "could you", "do you", "tell me", "explain", "introduce yourself", "walk me through",
                        "describe", "give me an example", "share an example", "talk about", "talk me through", "elaborate",
                        "i would like to know", "i'd like to know", "i want to know", "help me understand", "what about",
                        "any idea", "your view", "thoughts on", "bata sakte", "batao", "bataiye", "sakte ho", "sakte hain",
-                       "sakti ho", "samjhao"] where opening.contains(phrase) {
+                       "sakti ho", "samjhao"] where start.contains(phrase) {
             return true
         }
         return t.contains("introduce yourself") || t.contains("about yourself")
@@ -548,6 +575,17 @@ final class MeetingService: NSObject, ObservableObject {
                        : "Your work in plain words, any language. Answers turn it into professional language.")]
     }
 
+    /// Which company this call is with: a calendar event around now, the Job box, or what they said
+    /// ("Hi, I'm Priya from Marsh"), matched against the companies in my sheets.
+    var callCompany: String? {
+        let now = Date()
+        let cal = TodayService.shared.events.filter { $0.startDate.addingTimeInterval(-1800) <= now && $0.endDate >= now }
+            .map { [$0.title, $0.location, $0.notes].compactMap { $0 }.joined(separator: " ") }
+        let heard = lines.prefix(40).filter { $0.speaker == "Them" }.map(\.text)
+        return TrackerService.company(in: (cal + [Store.shared.config.meetingJD] + heard).joined(separator: "\n"),
+                                      names: TrackerService.shared.companies)
+    }
+
     /// Shared by every prompt: the context boxes, and how to treat speech-to-text mistakes.
     private var context: String {
         let c = Store.shared.config
@@ -557,6 +595,20 @@ final class MeetingService: NSObject, ObservableObject {
         var parts: [String] = []
         if !cv.isEmpty { parts.append((interviewing ? "The candidate's resume" : "My resume") + ":\n<<<\n\(cv)\n>>>") }
         if !jd.isEmpty { parts.append("The job description / agenda:\n<<<\n\(jd)\n>>>") }
+        let firm = interviewing ? nil : callCompany
+        let qa = interviewing ? "" : box(TrackerService.shared.qaText(company: firm), 30_000)
+        if !qa.isEmpty {
+            parts.append((firm.map { "This call is with \($0). Their rows come first in my Q&A below: prefer them. " } ?? "") +
+                         "My prepared interview answers (question | answer | proof | follow-ups | what not to say). " +
+                         "When a question matches or is close to one here, answer along my prepared answer: same facts, " +
+                         "numbers and proof, shortened to speech, and follow its \"watch out\" notes. " +
+                         "Skip anything marked [FILL]:\n<<<\n\(qa)\n>>>")
+        }
+        let sheet = interviewing ? "" : box(TrackerService.shared.text, 8_000)
+        if !sheet.isEmpty {
+            parts.append("My job-search tracker (target roles, salary I ask for, companies I applied to, CV notes). " +
+                         "Use it for salary and \"why this company\" answers:\n<<<\n\(sheet)\n>>>")
+        }
         if !notes.isEmpty {
             parts.append(interviewing
                 ? "What I want to check in this interview:\n<<<\n\(notes)\n>>>"
@@ -582,43 +634,53 @@ final class MeetingService: NSObject, ObservableObject {
     var coaching: Bool { Store.shared.config.deliveryCoach && !interviewing }
     private var turn: (start: Date, progress: [(Date, Int)], after: Date?)?
     private var lastThemAt: Date?
+    private var starting = false
     private var cardEvents: [Date] = []
-    private var deliveryWork: DispatchWorkItem?
     private var turns: [(words: Int, secs: Double, pauses: Int, waited: Int, fillers: Int)] = []
     nonisolated static let fillerWords: Set<String> = ["uh", "um", "umm", "uhh", "hmm", "er", "ah"]
 
     /// Called on every recognised update: stamps when my word count grows, so silences show up as gaps.
-    private func noteDelivery(_ who: String) {
+    /// My answer ends when they say something real (3+ words; "Okay." mid-answer doesn't end it) or at Stop.
+    private func noteDelivery(_ who: String, _ text: String) {
         guard coaching, active else { return }
-        if who == "Them" { lastThemAt = Date(); if turn != nil { finishTurn() }; return }
-        let n = myTurnText().split(separator: " ").count
-        if turn == nil { turn = (Date(), [], lastThemAt) }
+        if who == "Them" {
+            guard Self.words(text).count >= 3 || turn == nil else { return }
+            lastThemAt = Date(); finishTurn(); return
+        }
+        // Talking before they've said anything ("can you hear me?", setting up) isn't an answer.
+        if turn == nil { guard lastThemAt != nil else { return }; turn = (Date().addingTimeInterval(-1), [], lastThemAt) }
+        let n = turnText().split(separator: " ").count
         if n > (turn?.progress.last?.1 ?? 0) { turn?.progress.append((Date(), n)) }
-        deliveryWork?.cancel()
-        let w = DispatchWorkItem { [weak self] in self?.finishTurn() }
-        deliveryWork = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5, execute: w)
     }
 
-    private func myTurnText() -> String {
-        let lastThem = lines.lastIndex { $0.speaker == "Them" }
-        return lines[(lastThem.map { $0 + 1 } ?? 0)...].filter { $0.speaker == "Me" }.map(\.text).joined(separator: " ")
+    /// Everything I said since this answer began (their "Okay"s in between don't cut it).
+    private func turnText() -> String {
+        guard let t = turn else { return "" }
+        return lines.filter { $0.speaker == "Me" && $0.time >= t.start }.map(\.text).joined(separator: " ")
     }
 
-    /// My answer ended (they spoke, or I was quiet 3.5 s): add a Delivery card. Local maths, no AI.
+    /// My answer ended: score it. Local maths, no AI.
+    /// (Was: on 3.5 s of quiet, reading the text after their new line, so answers they followed up got no card.)
     private func finishTurn() {
-        deliveryWork?.cancel(); deliveryWork = nil
         guard let t = turn else { return }
+        let text = turnText()
         turn = nil
-        let text = myTurnText()
         let words = text.lowercased().components(separatedBy: CharacterSet.letters.inverted).filter { !$0.isEmpty }
         guard words.count >= 12, let first = t.progress.first?.0, let last = t.progress.last?.0 else { return }
+        let fs = GazeTracker.shared.frames(from: first, to: last)
         let r = Self.deliveryReport(progress: t.progress.map(\.0), questionEnded: t.after, cardEvents: cardEvents, words: words,
-                                    gaze: GazeTracker.summarize(GazeTracker.shared.frames(from: first, to: last),
-                                                                baseline: GazeTracker.shared.allFrames()))
+                                    gaze: GazeTracker.summarize(fs, baseline: GazeTracker.shared.allFrames()))
         turns.append((words.count, last.timeIntervalSince(first), r.pauses, r.waited, r.fillers))
-        suggestions.insert(Suggestion(title: "Delivery: " + String(text.prefix(60)), text: r.text, auto: false, done: true), at: 0)
+        // No card mid-call (it pulled attention off the answers); the numbers go to the log and the summary at Stop.
         log("delivery: \(r.text.replacingOccurrences(of: "\n", with: " | "))")
+        // ponytail: raw spread of the pupil signal, to tune the eye thresholds from real calls.
+        let seen = fs.filter { $0.face && !$0.away }
+        if seen.count > 2 {
+            func sd(_ a: [Float]) -> Float { let m = a.reduce(0, +) / Float(a.count); return (a.map { ($0 - m) * ($0 - m) }.reduce(0, +) / Float(a.count)).squareRoot() }
+            log(String(format: "gaze raw: frames=%d face=%.0f%% h sd=%.3f range=%.2f v sd=%.3f", fs.count,
+                       Double(seen.count) / Double(fs.count) * 100, sd(seen.map(\.h)),
+                       (seen.map(\.h).max() ?? 0) - (seen.map(\.h).min() ?? 0), sd(seen.map(\.v))))
+        }
     }
 
     /// Pure: turns timings into the card text (kept apart so SelfTest can check it).
@@ -633,14 +695,21 @@ final class MeetingService: NSObject, ObservableObject {
             if cardEvents.contains(where: { $0 > a && b.timeIntervalSince($0) >= 0 && b.timeIntervalSince($0) < 1.5 }) { waited += 1 }
         }
         let start = questionEnded.map { progress.first!.timeIntervalSince($0) }
+        // Started only once the card showed up: a card's first words came after the question, < 2.5 s before I began.
+        let cardBefore = questionEnded.flatMap { q in cardEvents.filter { $0 > q && $0 <= progress.first! }.max() }
+        let afterCard = cardBefore.map { progress.first!.timeIntervalSince($0) }
+        if let start, start > 2, let afterCard, afterCard < 2.5 { waited += 1 }
         let fillers = words.filter { fillerWords.contains($0) }.count
         var lines: [String] = []
         var head = "\(wpm) words/min"
-        if let start, start >= 0 { head = String(format: "Started %.1f s after the question · ", start) + head }
+        if let start, start >= 0 {
+            head = String(format: "Started %.1f s after the question", start)
+                + (afterCard.map { String(format: " (%.1f s after the card)", $0) } ?? "") + " · " + head
+        }
         lines.append(head)
-        lines.append(pauses.isEmpty ? "No long pauses" :
-            String(format: "%d pause%@ over 2 s (longest %.1f s)", pauses.count, pauses.count == 1 ? "" : "s", pauses.max()!)
-            + (waited > 0 ? " · \(waited) while a card was loading: you waited for it" : ""))
+        lines.append((pauses.isEmpty ? "No long pauses" :
+            String(format: "%d pause%@ over 2 s (longest %.1f s)", pauses.count, pauses.count == 1 ? "" : "s", pauses.max()!))
+            + (waited > 0 ? " · waited for a card \(waited)×" : ""))
         lines.append("Fillers (uh, um): \(fillers)")
         if let g = gaze {
             lines.append(String(format: "Eyes: up at the notch %.0f%% · level %.0f%% · down %.0f%% · away %.0f%% · reading sweeps %d",
@@ -794,7 +863,9 @@ final class MeetingService: NSObject, ObservableObject {
     /// One answer at a time; a newer request waits (only the latest waiting one is kept).
     private func run(title: String, prompt: String, auto: Bool) {
         if running != nil { pending = (title, prompt, auto); return }
-        suggestions.insert(Suggestion(title: title, auto: auto), at: 0)
+        var s = Suggestion(title: title, auto: auto)
+        if auto, !practicing, !interviewing, !title.hasPrefix(Self.minePrefix) { s.filler = Self.filler(for: title, turn: fillerTurn); fillerTurn += 1 }
+        suggestions.insert(s, at: 0)
         if suggestions.count > 20 { suggestions.removeLast() }
         let sid = suggestions[0].id
         runningSid = sid
@@ -820,6 +891,34 @@ final class MeetingService: NSObject, ObservableObject {
     }
 
     var busy: Bool { running != nil }
+    private var fillerTurn = 0
+
+    /// Something natural to say the moment a question lands, picked by the kind of question, so I'm talking
+    /// (not waiting for the card) while the answer is written. Local, no AI, so it's there instantly.
+    /// `turn` rotates the wording so the same opener doesn't repeat call after call.
+    nonisolated static func filler(for question: String, turn: Int) -> String {
+        let q = " " + words(question).joined(separator: " ") + " "
+        func has(_ k: [String]) -> Bool { k.contains { q.contains(" \($0) ") } }
+        let pick: [String]
+        if has(["about yourself", "introduce yourself", "walk me through your", "your background"]) {
+            pick = ["Sure. So, a quick picture of where I am right now…", "Yeah, sure. Let me start with what I do today…"]
+        } else if has(["ctc", "salary", "expectation", "expectations", "expecting", "package", "compensation", "notice period"]) {
+            pick = ["Sure. On the numbers side…", "Right, so on compensation…"]
+        } else if has(["tell me about a time", "a time when", "an example", "give me an example", "a situation", "a project"]) {
+            pick = ["Yes, one example that comes to mind is…", "Sure, let me take one project where this came up…"]
+        } else if has(["why"]) {
+            pick = ["That's a fair question. Honestly, the main reason is…", "Right. For me it really comes down to…"]
+        } else if has(["how", "walk me through", "approach", "process", "steps", "method"]) {
+            pick = ["Sure, let me walk you through how I'd go about it…", "Okay, so the way I usually approach this is…"]
+        } else if has(["weakness", "weaknesses", "challenge", "challenges", "difficult", "mistake", "failure", "conflict"]) {
+            pick = ["Hmm, let me be honest about this one…", "Sure. One thing I've had to work on is…"]
+        } else if has(["do you", "have you", "are you", "can you", "did you", "would you", "is it"]) {
+            pick = ["Right, so to answer that directly…", "Good point. So…"]
+        } else {
+            pick = ["Right, so… let me put it simply.", "Okay, so the way I see it…"]
+        }
+        return pick[turn % pick.count]
+    }
     private func run(title: String, auto: Bool, prompt: String) { run(title: title, prompt: prompt, auto: auto) }
 
     // MARK: Transcript

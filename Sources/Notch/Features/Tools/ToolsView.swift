@@ -6,7 +6,7 @@ struct ToolsView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Card(title: "Tools", trailing: AnyView(Text(tools.status).font(.system(size: 10)).foregroundStyle(.white.opacity(0.6)))) {
+            Card(title: "Tools", trailing: AnyView(Text(tools.status).font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.6)))) {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
                     tool("Screenshot", "camera.viewfinder") { tools.screenshotToClipboard() }
                     tool("Copy text\nfrom screen", "text.viewfinder") { tools.ocrScreen() }
@@ -39,7 +39,7 @@ struct ToolsView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     Text(voice.status.isEmpty ? "⌃⌥D dictates into any app · ⌃⌥L captions the Mac's audio" : voice.status)
-                        .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+                        .font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.45))
                 }
             }
         }
@@ -49,7 +49,7 @@ struct ToolsView: View {
         Button(action: action) {
             VStack(spacing: 5) {
                 Image(systemName: symbol).font(.system(size: 15, weight: .semibold))
-                Text(name).font(.system(size: 10)).multilineTextAlignment(.center).lineLimit(2)
+                Text(name).font(.system(size: 11)).multilineTextAlignment(.center).lineLimit(2)
             }
             .frame(maxWidth: .infinity, minHeight: 58)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.control.opacity(0.5)))

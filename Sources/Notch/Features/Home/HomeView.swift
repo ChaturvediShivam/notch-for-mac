@@ -36,7 +36,7 @@ struct HomeView: View {
                 Text(ctx.date, format: .dateTime.hour().minute())
                     .font(.system(size: 40, weight: .semibold).monospacedDigit())
                 Text(ctx.date, format: .dateTime.weekday(.wide).day().month(.wide))
-                    .font(Theme.body).foregroundStyle(.white.opacity(0.6))
+                    .font(Theme.body).foregroundStyle(Theme.ink.opacity(0.6))
             }
         }
         .padding(12)
@@ -48,8 +48,8 @@ struct HomeView: View {
         HStack(spacing: 8) {
             Artwork(image: media.artwork, size: 36)
             VStack(alignment: .leading, spacing: 1) {
-                Text(media.now?.title ?? "").font(.system(size: 11, weight: .semibold)).lineLimit(1)
-                Text(media.now?.artist ?? "").font(.system(size: 10)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
+                Text(media.now?.title ?? "").font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                Text(media.now?.artist ?? "").font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.55)).lineLimit(1)
             }
             Spacer(minLength: 0)
             Button { media.send(.togglePlayPause) } label: {
@@ -67,12 +67,12 @@ struct HomeView: View {
         return Button { home.toggle(t) } label: {
             VStack(alignment: .leading, spacing: 5) {
                 Image(systemName: t.symbol).font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(on ? Color.white : Color.white.opacity(0.7))
+                    .foregroundStyle(on ? Theme.ink : Theme.ink.opacity(0.7))
                     .frame(width: 26, height: 26)
                     .background(Circle().fill(on ? tint(t) : Theme.control))
                 Text(t.name).font(Theme.caption)
                 Text(home.busy.contains(t) ? "…" : (home.detail[t] ?? (on ? "On" : "Off")))
-                    .font(.system(size: 10)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+                    .font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.5)).lineLimit(1)
             }
             .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
             .padding(.horizontal, 10)
@@ -103,13 +103,13 @@ struct SliderRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Button { onIcon?() } label: {
-                Image(systemName: symbol).font(.system(size: 12, weight: .semibold)).frame(width: 26, height: 26)
+                Image(systemName: symbol).font(.system(size: 13, weight: .semibold)).frame(width: 26, height: 26)
             }
             .buttonStyle(GlyphButtonStyle(radius: 13))
             GeometryReader { g in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Theme.control)
-                    Capsule().fill(.white).frame(width: max(8, g.size.width * value))
+                    Capsule().fill(Theme.ink).frame(width: max(8, g.size.width * value))
                 }
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 0).onChanged { v in

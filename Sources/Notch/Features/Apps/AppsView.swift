@@ -28,7 +28,7 @@ struct AppsView: View {
                     } label: {
                         VStack(spacing: 3) {
                             Image(nsImage: apps.icon(url)).resizable().frame(width: 34, height: 34)
-                            Text(name).font(.system(size: 9)).lineLimit(1).foregroundStyle(.white.opacity(0.8))
+                            Text(name).font(.system(size: 10)).lineLimit(1).foregroundStyle(Theme.ink.opacity(0.8))
                         }
                         .frame(width: 58, height: 56)
                     }
@@ -56,7 +56,7 @@ struct Card<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.55))
+                Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.ink.opacity(0.55))
                 Spacer()
                 trailing
             }
@@ -72,7 +72,7 @@ struct Hint: View {
     let text: String
     init(_ text: String) { self.text = text }
     var body: some View {
-        Text(text).font(Theme.caption).foregroundStyle(.white.opacity(0.45))
+        Text(text).font(Theme.caption).foregroundStyle(Theme.ink.opacity(0.45))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .multilineTextAlignment(.center)
     }

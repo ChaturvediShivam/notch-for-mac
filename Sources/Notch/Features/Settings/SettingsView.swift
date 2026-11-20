@@ -29,12 +29,31 @@ struct SettingsView: View {
                     toggle("Markets (Yahoo Finance)", c.netMarkets)
                     toggle("Scores (ESPN)", c.netScores)
                     toggle("Claude tab (Claude Code or api.anthropic.com)", c.netClaude)
+                    toggle("Job tracker sheet (docs.google.com, read-only)", c.netTracker)
                     toggle("Local API on 127.0.0.1:\(store.config.apiPort) (alerts, Claude Code hooks)", Binding(
                         get: { store.config.netLocalAPI },
                         set: { store.config.netLocalAPI = $0; LocalServer.shared.start() }))
                 }
 
                 group("Meeting answers · use your own AI") { meetingAI }
+
+                group("Job tracker") {
+                    row("Sheet link") { field("Google Sheet link, shared as \"Anyone with the link\"", c.trackerURL) { TrackerService.shared.refresh(force: true) } }
+                    row("Q&A sheet") { field("Link to your prepared questions & answers tab", c.qaURL) { TrackerService.shared.refresh(force: true) } }
+                    Text("Meeting answers use them (salary, where you applied, your prepared answers); Today shows follow-ups due. Read every 30 min.")
+                        .font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.4))
+                    row("Update after calls") {
+                        field("Apps Script web app link (…/exec)", c.sheetWriteURL)
+                        Button("Copy script") {
+                            // The key lives in the Keychain and in the script; the sheet only accepts requests carrying it.
+                            let key = Keychain.get("sheet-write") ?? { let k = UUID().uuidString; Keychain.set("sheet-write", k); return k }()
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(TrackerService.script(key: key), forType: .string)
+                        }.buttonStyle(PillButtonStyle())
+                    }
+                    Text("After a call: the tracker row gets \"Interviewed\" + a follow-up in 3 days, and questions your Q&A doesn't have are added to it. Setup: in the tracker sheet, Extensions → Apps Script, paste the copied script, Deploy → Web app (Execute as: Me, Access: Anyone), paste the …/exec link here.")
+                        .font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.4))
+                }
 
                 group("Weather") {
                     row("City") { field("e.g. Mumbai", c.city) }
@@ -54,7 +73,7 @@ struct SettingsView: View {
                         }
                     }
                     Text("Leagues are ESPN paths: soccer/eng.1, soccer/esp.1, soccer/uefa.champions, basketball/nba, football/nfl, baseball/mlb, hockey/nhl")
-                        .font(.system(size: 10)).foregroundStyle(.white.opacity(0.4))
+                        .font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.4))
                 }
 
                 group("Claude") {
@@ -62,14 +81,14 @@ struct SettingsView: View {
                     if store.config.claudeBackend == "api" {
                         row("API model") { field("claude-opus-5-5", c.claudeAPIModel) }
                         Text(anthropicSaved ? "API key saved in Keychain" : "No API key yet (add it in the Claude tab)")
-                            .font(.system(size: 10)).foregroundStyle(.white.opacity(0.5))
+                            .font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.5))
                     } else {
                         row("Model") { field("Claude Code default (e.g. opus, sonnet)", c.claudeModel) }
                         row("Folder") { field("~ (home)", c.claudeCwd) }
                     }
                     HStack {
                         Text(ClaudeService.shared.claudePath.map { "Using \($0)" } ?? "Claude Code not found")
-                            .font(.system(size: 10)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+                            .font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.5)).lineLimit(1)
                         Spacer()
                         Button("Copy local API token") {
                             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(LocalServer.token, forType: .string)
@@ -83,7 +102,7 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Auto-paste (Accessibility)").font(Theme.caption)
                             Text("Lets dictation and clipboard paste press ⌘V for you. Without it, text is copied and you paste.")
-                                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+                                .font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.45))
                         }
                         Spacer()
                         if axTrusted { Text("On").font(Theme.caption).foregroundStyle(Theme.green) }
@@ -96,15 +115,15 @@ struct SettingsView: View {
                         }
                     }
                     Text("Other permissions are asked only when you first use the feature: Microphone + Speech (Dictate), Screen Recording (Listen, screenshot ask), Camera (Mirror), Calendar (Today), Location (if turned on above), Automation (Dark mode, Empty Trash).")
-                        .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+                        .font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.45))
                 }
 
                 group("Hotkeys") {
                     ForEach(Hotkeys.shared.registered, id: \.self) { h in
-                        Text(h).font(.system(size: 11, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading)
+                        Text(h).font(.system(size: 12, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     ForEach(Hotkeys.shared.failed, id: \.self) { h in
-                        Text("\(h)  (taken by another app)").font(.system(size: 11, design: .monospaced))
+                        Text("\(h)  (taken by another app)").font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(Theme.red).frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
@@ -127,12 +146,12 @@ struct SettingsView: View {
                     }
                     HStack {
                         Text("Notch \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")")
-                            .font(Theme.caption).foregroundStyle(.white.opacity(0.5))
+                            .font(Theme.caption).foregroundStyle(Theme.ink.opacity(0.5))
                         Spacer()
                         Button("Open data folder") { NSWorkspace.shared.open(Paths.home) }.buttonStyle(PillButtonStyle())
                         Button("Quit Notch") { NSApp.terminate(nil) }.buttonStyle(PillButtonStyle(tint: Theme.red))
                     }
-                    if !message.isEmpty { Text(message).font(.system(size: 10)).foregroundStyle(Theme.orange) }
+                    if !message.isEmpty { Text(message).font(.system(size: 11)).foregroundStyle(Theme.orange) }
                 }
             }
         }
@@ -153,13 +172,21 @@ struct SettingsView: View {
                                 .font(.system(size: k.mark.isEmpty ? 6 : 11, weight: .semibold)).foregroundStyle(k.accent)
                         }
                         .frame(width: 34, height: 34)
-                        .overlay(Circle().strokeBorder(.white, lineWidth: store.config.theme == k.id ? 2 : 0).padding(-3))
-                        Text(k.name).font(.system(size: 10)).foregroundStyle(.white.opacity(store.config.theme == k.id ? 1 : 0.55))
+                        .overlay(Circle().strokeBorder(Theme.ink, lineWidth: store.config.theme == k.id ? 2 : 0).padding(-3))
+                        Text(k.name).font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(store.config.theme == k.id ? 1 : 0.55))
                     }
                 }
                 .buttonStyle(.plain)
             }
         }
+        row("Day / night") {
+            ForEach([("auto", "Auto"), ("day", "Day"), ("night", "Night")], id: \.0) { id, name in
+                Button(name) { store.config.appearance = id; Look.shared.refresh(NSScreen.main?.frame ?? .zero) }
+                    .buttonStyle(PillButtonStyle(tint: store.config.appearance == id ? Theme.accent : nil))
+            }
+        }
+        Text("Auto: text turns dark over a bright background and light over a dark one (when see-through), else follows macOS.")
+            .font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.45))
         toggle("Edge glow and hover glow", c.edgeGlow)
         toggle("Liquid Glass (macOS 26)", c.glass)
         row("Transparency") {
@@ -171,7 +198,7 @@ struct SettingsView: View {
             row("Background") { field("hex, e.g. 1F3A2B (empty = theme)", c.tintHex) }
         }
         Text("Tabs (tap to hide or show)" + (Skin.isMaster ? "" : " · Home, Meeting, Media and Settings always stay"))
-            .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+            .font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.45))
         HStack(spacing: 2) {
             ForEach(NotchTab.allCases) { t in
                 let hidden = store.config.hiddenTabs.contains(t.title) && Skin.canHide(t)
@@ -179,11 +206,11 @@ struct SettingsView: View {
                     if hidden { store.config.hiddenTabs.removeAll { $0 == t.title } } else { store.config.hiddenTabs.append(t.title) }
                 } label: {
                     Image(systemName: t.symbol)
-                        .font(.system(size: 11)).frame(width: 26, height: 24)
+                        .font(.system(size: 12)).frame(width: 26, height: 24)
                         .overlay(alignment: .bottomTrailing) {
-                            if !Skin.canHide(t) { Image(systemName: "lock.fill").font(.system(size: 6)).foregroundStyle(.white.opacity(0.6)).padding(2) }
+                            if !Skin.canHide(t) { Image(systemName: "lock.fill").font(.system(size: 6)).foregroundStyle(Theme.ink.opacity(0.6)).padding(2) }
                         }
-                        .foregroundStyle(hidden ? .white.opacity(0.25) : .white)
+                        .foregroundStyle(hidden ? Theme.ink.opacity(0.25) : Theme.ink)
                         .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hidden ? .clear : Theme.control))
                 }
                 .buttonStyle(.plain).disabled(!Skin.canHide(t)).help(t.title)
@@ -197,7 +224,7 @@ struct SettingsView: View {
         row("Alerts") { daysMenu(c.alertDays, [7, 30, 90]) }
         row("Kept meetings") { daysMenu(c.keptDays, [0, 30, 90, 365]) }
         Text("Unkept meetings delete after 24 h, Listen after 7 days, screenshots after 1 day, logs after 7 days. Pinned clips and notes stay until you remove them. Everything stays on this Mac; nothing is sent to us.")
-            .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+            .font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.45))
         HStack {
             Button("Open data folder") { NSWorkspace.shared.open(Paths.home) }.buttonStyle(PillButtonStyle())
             Spacer()
@@ -236,12 +263,12 @@ struct SettingsView: View {
             .menuStyle(.borderlessButton).font(Theme.caption).fixedSize()
             Spacer()
         }
+        if id == "custom" { row("Base URL") { field("https://openrouter.ai/api/v1", c.aiBaseURL) } }
+        row("Model") {
+            field(p.hint, Binding(get: { store.config.aiModels[id] ?? "" },
+                                  set: { store.config.aiModels[id] = $0 }))
+        }
         if id != "claude" {
-            if id == "custom" { row("Base URL") { field("https://openrouter.ai/api/v1", c.aiBaseURL) } }
-            row("Model") {
-                field(p.hint, Binding(get: { store.config.aiModels[id] ?? "" },
-                                      set: { store.config.aiModels[id] = $0 }))
-            }
             if p.needsKey {
                 let saved = savedKeys.contains(id)
                 row("API key") {
@@ -260,16 +287,16 @@ struct SettingsView: View {
                 }
             }
         }
-        Text(id == "claude" ? "Uses your Claude Code login or Anthropic key (Claude section above)."
+        Text(id == "claude" ? "Uses your Claude Code login or Anthropic key (Claude section above). Meeting answers use Sonnet unless you type another model here (haiku = fastest, opus = slowest); the Claude tab keeps its own."
              : !p.cli.isEmpty ? "Uses your \(p.cli) login (your subscription, no API key). Install it and sign in once in Terminal; answers arrive whole, a few seconds slower than an API."
              : id == "ollama" ? "Runs on this Mac with Ollama: free and offline, but slower than cloud models. Run `ollama pull <model>` first."
              : "Your key, your credits: requests go straight from this Mac to the provider. Keys stay in the Keychain.")
-            .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+            .font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.45))
     }
 
     private func group<V: View>(_ title: String, @ViewBuilder _ content: () -> V) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.55))
+            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.ink.opacity(0.55))
             content()
         }
         .padding(10)

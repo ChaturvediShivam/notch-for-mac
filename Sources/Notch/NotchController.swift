@@ -6,6 +6,8 @@ import SwiftUI
 /// 18 px "ears" either side of the closed pill that still count as hovering.
 @MainActor
 final class NotchController {
+    static weak var shared: NotchController?
+    var panelFrame: CGRect { panel.frame }
     private let model: NotchModel
     private let panel = NotchPanel()
 
@@ -30,6 +32,7 @@ final class NotchController {
 
         layout()
         panel.orderFrontRegardless()
+        Self.shared = self
         installMonitors()
         model.onFocus = { [weak self] on in self?.setFocus(on) }
         // While open, a click on a text field may take the keyboard (becomesKeyOnlyIfNeeded);
@@ -37,6 +40,7 @@ final class NotchController {
         model.onOpenChange = { [weak self] open in
             guard let self else { return }
             if open { self.panel.allowsKey = true } else { self.setFocus(false) }
+            Look.shared.watch(open) { [weak self] in self?.panel.frame ?? .zero }
         }
 
         NotificationCenter.default.addObserver(
@@ -196,6 +200,7 @@ final class NotchController {
     private func pointerMoved() {
         let inside = hotRect().contains(NSEvent.mouseLocation)
         panel.ignoresMouseEvents = !inside && !panel.allowsKey
+        if inside, !model.hovering, !model.isOpen { Look.shared.refresh(panel.frame) }   // know day/night before it opens
         model.setHovering(inside)
 
         // While the pointer is over our window the global monitor goes quiet,

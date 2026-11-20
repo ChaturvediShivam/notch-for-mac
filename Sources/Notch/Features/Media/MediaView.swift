@@ -12,10 +12,10 @@ struct MediaView: View {
             }
         } else {
             VStack(spacing: 8) {
-                Image(systemName: "music.note").font(.system(size: 28)).foregroundStyle(.white.opacity(0.6))
+                Image(systemName: "music.note").font(.system(size: 28)).foregroundStyle(Theme.ink.opacity(0.6))
                 Text("Nothing playing").font(Theme.title)
                 Text(media.error ?? "Play something in Music, Spotify, a browser…")
-                    .font(Theme.caption).foregroundStyle(.white.opacity(0.5))
+                    .font(Theme.caption).foregroundStyle(Theme.ink.opacity(0.5))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.card))
@@ -28,10 +28,10 @@ struct MediaView: View {
                 Artwork(image: media.artwork, size: 84)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(n.title).font(.system(size: 15, weight: .semibold)).lineLimit(2)
-                    Text(n.artist).font(Theme.body).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
+                    Text(n.artist).font(Theme.body).foregroundStyle(Theme.ink.opacity(0.65)).lineLimit(1)
                     HStack(spacing: 4) {
                         if let icon = media.appIcon { Image(nsImage: icon).resizable().frame(width: 14, height: 14) }
-                        Text(media.appName ?? "").font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+                        Text(media.appName ?? "").font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.45))
                     }
                 }
                 Spacer(minLength: 0)
@@ -80,7 +80,7 @@ struct Artwork: View {
     var body: some View {
         Group {
             if let image { Image(nsImage: image).resizable().aspectRatio(contentMode: .fill) }
-            else { ZStack { Theme.control; Image(systemName: "music.note").foregroundStyle(.white.opacity(0.6)) } }
+            else { ZStack { Theme.control; Image(systemName: "music.note").foregroundStyle(Theme.ink.opacity(0.6)) } }
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.16, style: .continuous))
@@ -99,7 +99,7 @@ private struct ProgressBar: View {
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Theme.control)
-                        Capsule().fill(.white.opacity(0.85)).frame(width: max(4, g.size.width * frac))
+                        Capsule().fill(Theme.ink.opacity(0.85)).frame(width: max(4, g.size.width * frac))
                     }
                     .contentShape(Rectangle())
                     .gesture(DragGesture(minimumDistance: 0)
@@ -110,7 +110,7 @@ private struct ProgressBar: View {
                 HStack {
                     Text(Self.time(pos)); Spacer(); Text("-" + Self.time(max(0, n.duration - pos)))
                 }
-                .font(.system(size: 10).monospacedDigit()).foregroundStyle(.white.opacity(0.5))
+                .font(.system(size: 11).monospacedDigit()).foregroundStyle(Theme.ink.opacity(0.5))
             }
         }
     }
@@ -137,7 +137,7 @@ private struct LyricsView: View {
                                 ForEach(Array(media.lyrics.enumerated()), id: \.offset) { i, l in
                                     Text(l.text.isEmpty ? "♪" : l.text)
                                         .font(.system(size: i == cur ? 15 : 13, weight: i == cur ? .bold : .medium))
-                                        .foregroundStyle(.white.opacity(i == cur ? 1 : 0.35))
+                                        .foregroundStyle(Theme.ink.opacity(i == cur ? 1 : 0.35))
                                         .id(i)
                                         .onTapGesture { MediaService.shared.seek(l.time) }
                                 }

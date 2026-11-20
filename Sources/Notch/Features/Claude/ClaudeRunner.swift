@@ -9,7 +9,7 @@ import os
 enum ClaudeRunner {
     struct Provider { let id, name, base, hint: String; let needsKey: Bool; var cli = "" }
     static let providers = [
-        Provider(id: "claude", name: "Claude (as in the Claude tab)", base: "", hint: "", needsKey: false),
+        Provider(id: "claude", name: "Claude (as in the Claude tab)", base: "", hint: "sonnet (default)", needsKey: false),
         Provider(id: "codex", name: "Codex CLI (ChatGPT plan login)", base: "", hint: "default (optional)", needsKey: false, cli: "codex"),
         Provider(id: "gemini-cli", name: "Gemini CLI (Google login)", base: "", hint: "default (optional)", needsKey: false, cli: "gemini"),
         Provider(id: "openai", name: "ChatGPT (OpenAI API key)", base: "https://api.openai.com/v1", hint: "e.g. gpt-5-mini", needsKey: true),
@@ -33,16 +33,20 @@ enum ClaudeRunner {
             }
             return openAI(prompt, base: base, key: key, model: model)
         }
+        // Meeting has its own Claude model (Settings → Meeting answers → Model), Sonnet by default:
+        // fast enough to read during a call, and the Claude tab keeps whatever it uses (e.g. Opus).
+        let typed = (cfg.aiModels["claude"] ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        let meet = typed.isEmpty ? "sonnet" : typed
         if cfg.claudeBackend == "api" {
             guard let key = ClaudeService.shared.apiKey else {
                 return AsyncThrowingStream { $0.finish(throwing: err("Add your Anthropic API key in the Claude tab")) }
             }
-            return api(prompt, key: key, model: cfg.claudeAPIModel)
+            return api(prompt, key: key, model: ["sonnet": "claude-sonnet-5-5", "haiku": "claude-haiku-5-5", "opus": "claude-opus-5-5"][meet] ?? meet)
         }
         guard let claude = ClaudeService.shared.claudePath else {
             return AsyncThrowingStream { $0.finish(throwing: err("Claude Code not found")) }
         }
-        return code(prompt, claude: claude, model: cfg.claudeModel)
+        return code(prompt, claude: claude, model: meet)
     }
 
     private static func err(_ s: String) -> NSError { NSError(domain: "Claude", code: 0, userInfo: [NSLocalizedDescriptionKey: s]) }

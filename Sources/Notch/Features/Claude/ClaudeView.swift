@@ -28,7 +28,7 @@ struct ClaudeView: View {
             Image(systemName: "key.fill").font(.system(size: 20)).foregroundStyle(Theme.orange)
             Text("Add your Anthropic API key").font(Theme.title)
             Text("Stored in your macOS Keychain. Get one at console.anthropic.com.")
-                .font(Theme.caption).foregroundStyle(.white.opacity(0.5))
+                .font(Theme.caption).foregroundStyle(Theme.ink.opacity(0.5))
             HStack {
                 SecureField("sk-ant-…", text: $key).textFieldStyle(.plain)
                     .padding(.horizontal, 10).frame(width: 280, height: 30)
@@ -49,7 +49,7 @@ struct ClaudeView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         if svc.messages.isEmpty {
                             Text("Ask \(svc.useAPI ? "Claude" : "Claude Code") anything. Drop files here, or press ⌃⌥S to ask about part of your screen.")
-                                .font(Theme.caption).foregroundStyle(.white.opacity(0.45))
+                                .font(Theme.caption).foregroundStyle(Theme.ink.opacity(0.45))
                                 .frame(maxWidth: .infinity).padding(.top, 50)
                         }
                         ForEach(svc.messages) { m in bubble(m).id(m.id) }
@@ -83,11 +83,11 @@ struct ClaudeView: View {
             VStack(alignment: .leading, spacing: 4) {
                 if !m.attachments.isEmpty {
                     Text(m.attachments.map { "📎 " + $0 }.joined(separator: "  "))
-                        .font(.system(size: 10)).foregroundStyle(.white.opacity(0.6))
+                        .font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.6))
                 }
                 if !m.tools.isEmpty {
                     Text(m.tools.suffix(4).map { "⚙︎ " + $0 }.joined(separator: "   "))
-                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(.white.opacity(0.5)).lineLimit(2)
+                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.ink.opacity(0.5)).lineLimit(2)
                 }
                 if m.text.isEmpty && m.role == "assistant" {
                     ProgressView().controlSize(.small)
@@ -95,7 +95,7 @@ struct ClaudeView: View {
                     Text(Self.markdown(m.text)).font(Theme.body).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if let n = m.note { Text(n).font(.system(size: 10)).foregroundStyle(Theme.orange) }
+                if let n = m.note { Text(n).font(.system(size: 11)).foregroundStyle(Theme.orange) }
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -111,8 +111,8 @@ struct ClaudeView: View {
                     HStack(spacing: 4) {
                         if let t = a.thumbnail { Image(nsImage: t).resizable().aspectRatio(contentMode: .fill).frame(width: 20, height: 20).clipShape(RoundedRectangle(cornerRadius: 4)) }
                         else { Image(systemName: "doc.fill") }
-                        Text(a.name).font(.system(size: 10)).lineLimit(1)
-                        Button { svc.attachments.removeAll { $0.id == a.id } } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }
+                        Text(a.name).font(.system(size: 11)).lineLimit(1)
+                        Button { svc.attachments.removeAll { $0.id == a.id } } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
                             .buttonStyle(GlyphButtonStyle(radius: 6))
                     }
                     .padding(.horizontal, 6).frame(height: 26)
@@ -174,9 +174,9 @@ struct BackendSwitch: View {
     private func option(_ value: String, _ title: String, _ symbol: String) -> some View {
         let on = store.config.claudeBackend == value
         return Button { ClaudeService.shared.setBackend(value) } label: {
-            Label(title, systemImage: symbol).font(.system(size: 11, weight: .medium))
+            Label(title, systemImage: symbol).font(.system(size: 12, weight: .medium))
                 .padding(.horizontal, 10).frame(height: 22)
-                .foregroundStyle(on ? Color.white : Color.white.opacity(0.55))
+                .foregroundStyle(on ? Theme.ink : Theme.ink.opacity(0.55))
                 .background(Capsule().fill(on ? Theme.control : .clear))
         }
         .buttonStyle(GlyphButtonStyle(radius: 11))

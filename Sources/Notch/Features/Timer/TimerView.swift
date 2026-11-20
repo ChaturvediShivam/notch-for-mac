@@ -48,7 +48,7 @@ struct TimerView: View {
                         ScrollView {
                             ForEach(Array(t.laps.enumerated()), id: \.offset) { i, l in
                                 HStack { Text("Lap \(t.laps.count - i)"); Spacer(); Text(Self.sw(l)) }
-                                    .font(.system(size: 11).monospacedDigit()).foregroundStyle(.white.opacity(0.7))
+                                    .font(.system(size: 12).monospacedDigit()).foregroundStyle(Theme.ink.opacity(0.7))
                             }
                         }
                     }

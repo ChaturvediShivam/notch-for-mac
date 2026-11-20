@@ -10,6 +10,10 @@ struct Config: Codable, Equatable {
     var netScores = true
     var netClaude = true
     var netLocalAPI = true          // loopback only, but still a switch
+    var netTracker = true           // job tracker Google Sheet (read-only CSV)
+    var trackerURL = ""             // that sheet's link, shared as "anyone with the link"
+    var qaURL = ""                  // my prepared interview Q&A sheet (link to the tab)
+    var sheetWriteURL = ""          // Apps Script web app that updates the sheets after a call (key in Keychain)
 
     var city = ""                   // weather location by name (no Location permission needed)
     var useLocation = false         // opt-in CoreLocation
@@ -41,6 +45,7 @@ struct Config: Codable, Equatable {
     var clipDays = 7                 // clipboard history lifetime (pinned items stay)
     var alertDays = 30
     var keptDays = 0                 // kept meetings: 0 = until you delete them
+    var appearance = "auto"          // open notch: auto (opposite of what's behind / macOS), day, night
     var glass = true                 // Liquid Glass on macOS 26 for the open notch
     var opacity = 1.0                // open notch background, 0.3…1
     var theme = "classic"            // Skin preset id
@@ -58,6 +63,7 @@ struct Config: Codable, Equatable {
         netLyrics = v(.netLyrics, z.netLyrics); netWeather = v(.netWeather, z.netWeather)
         netMarkets = v(.netMarkets, z.netMarkets); netScores = v(.netScores, z.netScores)
         netClaude = v(.netClaude, z.netClaude); netLocalAPI = v(.netLocalAPI, z.netLocalAPI)
+        netTracker = v(.netTracker, z.netTracker); trackerURL = v(.trackerURL, z.trackerURL); qaURL = v(.qaURL, z.qaURL); sheetWriteURL = v(.sheetWriteURL, z.sheetWriteURL)
         city = v(.city, z.city); useLocation = v(.useLocation, z.useLocation); celsius = v(.celsius, z.celsius)
         watchlist = v(.watchlist, z.watchlist); leagues = v(.leagues, z.leagues)
         apiPort = v(.apiPort, z.apiPort); claudeModel = v(.claudeModel, z.claudeModel); claudeCwd = v(.claudeCwd, z.claudeCwd); meetingLocale = v(.meetingLocale, z.meetingLocale); meetingTopic = v(.meetingTopic, z.meetingTopic); meetingAuto = v(.meetingAuto, z.meetingAuto)
@@ -67,7 +73,7 @@ struct Config: Codable, Equatable {
         claudeBackend = v(.claudeBackend, z.claudeBackend); claudeAPIModel = v(.claudeAPIModel, z.claudeAPIModel)
         pinnedApps = v(.pinnedApps, z.pinnedApps); keepAwake = v(.keepAwake, z.keepAwake)
         launchAtLogin = v(.launchAtLogin, z.launchAtLogin); keepAlive = v(.keepAlive, z.keepAlive)
-        clipboardLimit = v(.clipboardLimit, z.clipboardLimit); clipDays = v(.clipDays, z.clipDays); alertDays = v(.alertDays, z.alertDays); keptDays = v(.keptDays, z.keptDays); opacity = v(.opacity, z.opacity); glass = v(.glass, z.glass)
+        clipboardLimit = v(.clipboardLimit, z.clipboardLimit); clipDays = v(.clipDays, z.clipDays); alertDays = v(.alertDays, z.alertDays); keptDays = v(.keptDays, z.keptDays); opacity = v(.opacity, z.opacity); appearance = v(.appearance, z.appearance); glass = v(.glass, z.glass)
         theme = v(.theme, z.theme); edgeGlow = v(.edgeGlow, z.edgeGlow); hiddenTabs = v(.hiddenTabs, z.hiddenTabs)
         accentHex = v(.accentHex, z.accentHex); tintHex = v(.tintHex, z.tintHex)
     }

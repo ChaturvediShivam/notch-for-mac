@@ -7,16 +7,16 @@ struct ShelfView: View {
 
     var body: some View {
         Card(title: "Shelf", trailing: AnyView(HStack(spacing: 6) {
-            if !svc.status.isEmpty { Text(svc.status).font(.system(size: 10)).foregroundStyle(.white.opacity(0.6)) }
+            if !svc.status.isEmpty { Text(svc.status).font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.6)) }
             Button("AirDrop all") { svc.airDrop(svc.items) }.buttonStyle(PillButtonStyle()).disabled(svc.items.isEmpty)
             Button("Clear") { svc.clear() }.buttonStyle(PillButtonStyle()).disabled(svc.items.isEmpty)
         })) {
             Group {
                 if svc.items.isEmpty {
                     VStack(spacing: 6) {
-                        Image(systemName: "tray.and.arrow.down.fill").font(.system(size: 26)).foregroundStyle(.white.opacity(0.5))
+                        Image(systemName: "tray.and.arrow.down.fill").font(.system(size: 26)).foregroundStyle(Theme.ink.opacity(0.5))
                         Text("Drop files here to hold them. Drag them out to any app.").font(Theme.caption)
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(Theme.ink.opacity(0.5))
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -44,7 +44,7 @@ struct ShelfView: View {
     private func item(_ u: URL) -> some View {
         VStack(spacing: 4) {
             Image(nsImage: NSWorkspace.shared.icon(forFile: u.path)).resizable().frame(width: 52, height: 52)
-            Text(u.lastPathComponent).font(.system(size: 10)).lineLimit(2).multilineTextAlignment(.center)
+            Text(u.lastPathComponent).font(.system(size: 11)).lineLimit(2).multilineTextAlignment(.center)
         }
         .frame(width: 84, height: 96)
         .background(HoverFill(radius: 10))

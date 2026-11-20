@@ -21,10 +21,10 @@ struct UsageView: View {
                         VStack(spacing: 3) {
                             ForEach(svc.models) { m in
                                 HStack {
-                                    Text(m.model).font(.system(size: 11, design: .monospaced)).lineLimit(1)
+                                    Text(m.model).font(.system(size: 12, design: .monospaced)).lineLimit(1)
                                     Spacer()
                                     Text("in \(UsageService.short(m.input + m.cacheRead + m.cacheWrite)) · out \(UsageService.short(m.output))")
-                                        .font(.system(size: 10).monospacedDigit()).foregroundStyle(.white.opacity(0.55))
+                                        .font(.system(size: 11).monospacedDigit()).foregroundStyle(Theme.ink.opacity(0.55))
                                 }
                             }
                         }
@@ -37,9 +37,9 @@ struct UsageView: View {
 
     private func stat(_ title: String, _ value: String, _ sub: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.55))
+            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.ink.opacity(0.55))
             Text(value).font(.system(size: 28, weight: .semibold).monospacedDigit())
-            Text(sub).font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+            Text(sub).font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.45))
         }
         .padding(10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -51,11 +51,11 @@ struct UsageView: View {
         return HStack(alignment: .bottom, spacing: 8) {
             ForEach(svc.days) { d in
                 VStack(spacing: 3) {
-                    Text(d.tokens > 0 ? UsageService.short(d.tokens) : "").font(.system(size: 8)).foregroundStyle(.white.opacity(0.5))
+                    Text(d.tokens > 0 ? UsageService.short(d.tokens) : "").font(.system(size: 9)).foregroundStyle(Theme.ink.opacity(0.5))
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
                         .fill(Calendar.current.isDateInToday(d.date) ? Theme.orange : Theme.control)
                         .frame(height: max(3, CGFloat(d.tokens) / CGFloat(maxV) * 60))
-                    Text(d.date, format: .dateTime.weekday(.narrow)).font(.system(size: 9)).foregroundStyle(.white.opacity(0.5))
+                    Text(d.date, format: .dateTime.weekday(.narrow)).font(.system(size: 10)).foregroundStyle(Theme.ink.opacity(0.5))
                 }
                 .frame(maxWidth: .infinity)
             }

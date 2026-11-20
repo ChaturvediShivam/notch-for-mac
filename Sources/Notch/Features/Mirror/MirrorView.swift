@@ -14,7 +14,7 @@ struct MirrorView: View {
                 VStack(spacing: 10) {
                     Image(systemName: "camera.fill").font(.system(size: 26))
                     Text("Mirror uses your camera to show a live preview here.\nNothing is recorded or saved.")
-                        .font(Theme.caption).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.6))
+                        .font(Theme.caption).multilineTextAlignment(.center).foregroundStyle(Theme.ink.opacity(0.6))
                     Button("Turn on camera") {
                         AVCaptureDevice.requestAccess(for: .video) { _ in
                             DispatchQueue.main.async { status = AVCaptureDevice.authorizationStatus(for: .video) }

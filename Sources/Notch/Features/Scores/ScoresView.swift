@@ -23,11 +23,11 @@ struct ScoresView: View {
     private func tile(_ m: Match) -> some View {
         VStack(spacing: 5) {
             HStack {
-                Text(m.league).font(.system(size: 9, weight: .semibold)).foregroundStyle(.white.opacity(0.5))
+                Text(m.league).font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.ink.opacity(0.5))
                 Spacer()
                 if m.state == "in" { Circle().fill(Theme.red).frame(width: 6, height: 6) }
                 Text(m.state == "pre" ? m.date.formatted(date: .omitted, time: .shortened) : m.detail)
-                    .font(.system(size: 9)).foregroundStyle(m.state == "in" ? Theme.red : .white.opacity(0.5)).lineLimit(1)
+                    .font(.system(size: 10)).foregroundStyle(m.state == "in" ? Theme.red : Theme.ink.opacity(0.5)).lineLimit(1)
             }
             team(m.away, m.awayScore, m.awayLogo, win: m.state == "post" && (Int(m.awayScore) ?? 0) > (Int(m.homeScore) ?? 0))
             team(m.home, m.homeScore, m.homeLogo, win: m.state == "post" && (Int(m.homeScore) ?? 0) > (Int(m.awayScore) ?? 0))
@@ -40,7 +40,7 @@ struct ScoresView: View {
         HStack(spacing: 6) {
             AsyncImage(url: logo) { $0.resizable().aspectRatio(contentMode: .fit) } placeholder: { Color.clear }
                 .frame(width: 16, height: 16)
-            Text(name).font(.system(size: 12, weight: win ? .bold : .medium))
+            Text(name).font(.system(size: 13, weight: win ? .bold : .medium))
             Spacer()
             Text(score).font(.system(size: 13, weight: .semibold).monospacedDigit())
         }

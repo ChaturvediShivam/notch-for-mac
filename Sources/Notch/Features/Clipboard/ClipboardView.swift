@@ -6,7 +6,7 @@ struct ClipboardView: View {
 
     var body: some View {
         Card(title: "Clipboard history", trailing: AnyView(HStack(spacing: 6) {
-            Toggle("Pause", isOn: $svc.paused).toggleStyle(.switch).controlSize(.mini).font(.system(size: 10))
+            Toggle("Pause", isOn: $svc.paused).toggleStyle(.switch).controlSize(.mini).font(.system(size: 11))
             Button("Clear") { svc.clear() }.buttonStyle(PillButtonStyle())
         })) {
             VStack(spacing: 6) {
@@ -30,11 +30,11 @@ struct ClipboardView: View {
 
     private func row(_ i: ClipItem) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: i.pinned ? "pin.fill" : "doc.on.doc").font(.system(size: 10))
-                .foregroundStyle(i.pinned ? Theme.orange : .white.opacity(0.4)).frame(width: 14)
+            Image(systemName: i.pinned ? "pin.fill" : "doc.on.doc").font(.system(size: 11))
+                .foregroundStyle(i.pinned ? Theme.orange : Theme.ink.opacity(0.4)).frame(width: 14)
             Text(i.text.replacingOccurrences(of: "\n", with: " ⏎ ")).font(Theme.caption).lineLimit(1)
             Spacer()
-            Text(i.date, style: .relative).font(.system(size: 9)).foregroundStyle(.white.opacity(0.35))
+            Text(i.date, style: .relative).font(.system(size: 10)).foregroundStyle(Theme.ink.opacity(0.35))
         }
         .padding(.horizontal, 8).frame(height: 26)
         .background(HoverFill(radius: 7))

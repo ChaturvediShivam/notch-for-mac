@@ -29,13 +29,13 @@ struct AlertsView: View {
                                     HStack {
                                         Text(a.title).font(Theme.title).lineLimit(1)
                                         Spacer()
-                                        Text(a.date, style: .relative).font(.system(size: 10)).foregroundStyle(.white.opacity(0.4))
+                                        Text(a.date, style: .relative).font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.4))
                                     }
                                     if !a.body.isEmpty {
-                                        Text(a.body).font(Theme.caption).foregroundStyle(.white.opacity(0.7)).lineLimit(3)
+                                        Text(a.body).font(Theme.caption).foregroundStyle(Theme.ink.opacity(0.7)).lineLimit(3)
                                             .textSelection(.enabled)
                                     }
-                                    Text(a.source).font(.system(size: 10)).foregroundStyle(.white.opacity(0.4))
+                                    Text(a.source).font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.4))
                                 }
                             }
                             .padding(8)
@@ -62,8 +62,9 @@ struct PillButtonStyle: ButtonStyle {
         @Environment(\.isEnabled) private var enabled
         var body: some View {
             configuration.label
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .padding(.horizontal, 10).frame(height: 24)
+                .foregroundStyle(tint == nil ? Theme.ink : .white)   // white on a solid colour, day or night
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(tint.map { $0.opacity(configuration.isPressed ? 0.7 : (hover ? 0.9 : 0.8)) }
                           ?? (configuration.isPressed ? Theme.pressed : hover ? Theme.hover : Theme.control)))

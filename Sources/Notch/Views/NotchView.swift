@@ -10,6 +10,7 @@ struct NotchView: View {
     @ObservedObject private var voice = VoiceService.shared
     @ObservedObject private var meeting = MeetingService.shared
     @ObservedObject private var store = Store.shared
+    @ObservedObject private var look = Look.shared
 
     var body: some View {
         let g = model.geometry
@@ -17,12 +18,12 @@ struct NotchView: View {
         let activity = open ? nil : Activity.current()
         let size = currentSize(g, activity)
         let topR: CGFloat = open ? 12 : 6
-        let botR: CGFloat = open ? 24 : (g.hasHardwareNotch ? 10 : size.height / 2)
+        let botR: CGFloat = open ? 32 : (g.hasHardwareNotch ? 10 : size.height / 2)   // iOS 26: rounder
         let shape = NotchShape(topRadius: topR, bottomRadius: botR)
 
         ZStack(alignment: .top) {
             NotchBackground(shape: shape, open: open, glass: store.config.glass, opacity: store.config.opacity,
-                            skin: Skin.current, glow: store.config.edgeGlow)
+                            skin: Skin.current, glow: store.config.edgeGlow, light: look.light)
             if let activity {
                 LiveActivityView(activity: activity, notchWidth: g.closedSize.width, height: g.closedSize.height)
                     .padding(.horizontal, topR)
@@ -32,6 +33,9 @@ struct NotchView: View {
                 OpenPanel(bandHeight: g.closedSize.height,
                           notchWidth: g.hasHardwareNotch ? g.closedSize.width : 0)
                     .padding(.horizontal, topR)
+                    // Day/night: system controls follow it, and the panel rebuilds so every Theme.ink re-reads.
+                    .environment(\.colorScheme, look.light ? .light : .dark)
+                    .id(look.light)
                     .transition(.asymmetric(
                         insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .top))
                             .animation(.easeOut(duration: 0.20).delay(0.08)),
@@ -44,7 +48,8 @@ struct NotchView: View {
         // Shadows hang off a plain shape behind the panel. On the whole view they forced every
         // tab's content to be re-rendered offscreen on each frame of the open spring (lag).
         .background {
-            shape.fill(.black)
+            // Behind the glass too: black made the day glass look grey, so by day it's white.
+            shape.fill(open && look.light ? Color.white : .black)
                 .shadow(color: .black.opacity(open ? 0.5 : 0), radius: 16, y: 8)
                 // Hover: a soft glow in the theme colour, like the notch is breathing out.
                 .shadow(color: (Skin.current.glow.first ?? .white).opacity(store.config.edgeGlow && model.hovering && !open ? 0.55 : 0), radius: 8)
@@ -84,24 +89,24 @@ struct OpenPanel: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 14)
-        .foregroundStyle(.white)
+        .foregroundStyle(Theme.ink)
     }
 
     private var header: some View {
         HStack(spacing: 8) {
             let mark = Skin.current.mark
             if !mark.isEmpty {
-                Image(systemName: mark).font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.accent)
+                Image(systemName: mark).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.accent)
             }
             Text(model.palette ? "Search" : model.tab.title).font(Theme.title)
             Spacer(minLength: notchWidth + 16)      // keep clear of the camera housing
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
                 Text(ctx.date, format: .dateTime.hour().minute())
                     .font(Theme.caption.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(Theme.ink.opacity(0.7))
             }
             Button { NSApp.terminate(nil) } label: {
-                Image(systemName: "power").font(.system(size: 11, weight: .semibold))
+                Image(systemName: "power").font(.system(size: 12, weight: .semibold))
                     .frame(width: 22, height: 22)
             }
             .buttonStyle(GlyphButtonStyle(radius: 11))
@@ -133,9 +138,9 @@ struct TabStrip: View {
             ForEach(Skin.visibleTabs) { t in
                 Button { model.setTab(t) } label: {
                     Image(systemName: t.symbol)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .frame(width: 29, height: 26)
-                        .foregroundStyle(model.tab == t ? Color.white : Color.white.opacity(0.55))
+                        .foregroundStyle(model.tab == t ? Theme.ink : Theme.ink.opacity(0.55))
                         .background {
                             if model.tab == t {
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -187,16 +192,23 @@ struct TabContent: View {
 /// then the skin's colour wash, edge glow, and one blade-glint sweep each time it opens.
 private struct NotchBackground: View {
     let shape: NotchShape, open: Bool, glass: Bool, opacity: Double
-    let skin: Skin, glow: Bool
+    let skin: Skin, glow: Bool, light: Bool
+    /// cacheDisplay can't draw glass: snapshots use the plain fill.
+    static let snapshotting = ProcessInfo.processInfo.environment["NOTCH_SNAPSHOT"] != nil
 
     var body: some View {
         ZStack {
-            if open, glass, #available(macOS 26, *) {
-                Color.clear.glassEffect(.regular.tint((skin.tint.first ?? .black).opacity(opacity * 0.6)), in: shape)
+            if open, glass, !Self.snapshotting, #available(macOS 26, *) {
+                // iOS 26 Liquid Glass: clear glass, tinted white by day and dark (or the skin's colour) at night.
+                // Enough frosting that the page behind doesn't show through the text, even at low transparency.
+                let tint = light ? Color.white.opacity(0.62 + opacity * 0.3) : (skin.tint.first ?? .black).opacity(max(0.4, opacity * 0.7))
+                Color.clear.glassEffect(.regular.tint(tint), in: shape)
+            } else if open, light {
+                shape.fill(Color(white: 0.96).opacity(opacity))
             } else {
-                shape.fill(Color.black.opacity(open ? opacity : 1))
+                shape.fill(Color.black.opacity(open ? opacity : 1))   // closed: always black, like the camera housing
             }
-            if open, !skin.tint.isEmpty || glow { decoration }
+            if open, (!skin.tint.isEmpty && !light) || glow { decoration }
         }
     }
 

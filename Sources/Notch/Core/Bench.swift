@@ -20,6 +20,17 @@ enum Bench {
         RunLoop.main.add(probe, forMode: .common)
 
         var steps: [(String, Double, () -> Void)] = [("idle", 3, {})]
+        if only == "look" {
+            // Day/night check: can we read the screen behind the notch, and how bright is it?
+            Task {
+                let r = NotchController.shared?.panelFrame ?? .zero
+                let lum = await Look.brightness(behind: r)
+                let out = "access=\(CGPreflightScreenCaptureAccess()) rect=\(r) brightness=\(lum.map { String(format: "%.2f", $0) } ?? "nil")\n"
+                try? out.write(toFile: NSTemporaryDirectory() + "notch-look.txt", atomically: true, encoding: .utf8)
+                NSApp.terminate(nil)
+            }
+            return
+        }
         if only == "meeting" {
             // Live speech on the Meeting tab: a partial result every 100 ms, as the recogniser sends them.
             steps.append(("open meeting", 0.9, { m.show(.meeting) }))

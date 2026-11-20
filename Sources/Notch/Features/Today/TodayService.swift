@@ -104,7 +104,7 @@ final class TodayService: NSObject, ObservableObject, CLLocationManagerDelegate 
         else { store.requestAccess(to: .event, completion: done) }
     }
 
-    private func loadEvents() {
+    func loadEvents() {
         calendarAccess = EKEventStore.authorizationStatus(for: .event)
         let granted: Bool
         if #available(macOS 14.0, *) { granted = calendarAccess == .fullAccess } else { granted = calendarAccess == .authorized }

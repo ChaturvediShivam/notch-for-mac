@@ -1,11 +1,14 @@
 import SwiftUI
 
-/// Design system from DESIGN.md: flat, pure black, white at low alpha, iOS accents.
+/// Design system from DESIGN.md: flat, ink at low alpha, iOS accents. Ink is white at night and
+/// black in the day (Look), so text stays readable on whatever is behind the glass.
+@MainActor
 enum Theme {
-    static let card    = Color.white.opacity(0.11)
-    static let control = Color.white.opacity(0.18)
-    static let hover   = Color.white.opacity(0.32)
-    static let pressed = Color.white.opacity(0.40)
+    static var ink: Color { Look.shared.light ? .black : .white }
+    static var card: Color    { ink.opacity(Look.shared.light ? 0.07 : 0.11) }
+    static var control: Color { ink.opacity(Look.shared.light ? 0.10 : 0.18) }
+    static var hover: Color   { ink.opacity(Look.shared.light ? 0.18 : 0.32) }
+    static var pressed: Color { ink.opacity(Look.shared.light ? 0.24 : 0.40) }
 
     /// The chosen skin's accent (Settings → Look).
     @MainActor static var accent: Color { Skin.current.accent }
@@ -16,9 +19,9 @@ enum Theme {
     static let red    = Color(red: 0xFF / 255, green: 0x45 / 255, blue: 0x3A / 255)
     static let purple = Color(red: 0xBF / 255, green: 0x5A / 255, blue: 0xF2 / 255)
 
-    static let body    = Font.system(size: 13)
-    static let caption = Font.system(size: 12)
-    static let title   = Font.system(size: 13, weight: .semibold)
+    static let body    = Font.system(size: 14)
+    static let caption = Font.system(size: 13)
+    static let title   = Font.system(size: 14, weight: .semibold)
 }
 
 /// Every hover/press fill is rounded.

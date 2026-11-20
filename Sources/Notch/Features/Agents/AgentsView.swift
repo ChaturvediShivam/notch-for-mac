@@ -12,7 +12,7 @@ struct AgentsView: View {
                     VStack(spacing: 10) {
                         Hint("Approve Claude Code's Bash and file edits from the notch.\nAdds hooks to ~/.claude/settings.json (backed up first).")
                         Button("Install Claude Code hooks") { svc.installHooks() }.buttonStyle(PillButtonStyle(tint: Theme.accent))
-                        if !svc.installMessage.isEmpty { Text(svc.installMessage).font(.system(size: 10)).foregroundStyle(.white.opacity(0.5)) }
+                        if !svc.installMessage.isEmpty { Text(svc.installMessage).font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.5)) }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -22,7 +22,7 @@ struct AgentsView: View {
             .frame(width: 400)
 
             Card(title: "Sessions", trailing: AnyView(Toggle("Ask in Notch", isOn: $svc.askInNotch)
-                .toggleStyle(.switch).controlSize(.mini).font(.system(size: 10)))) {
+                .toggleStyle(.switch).controlSize(.mini).font(.system(size: 11)))) {
                 VStack(alignment: .leading, spacing: 6) {
                     if svc.sessions.isEmpty {
                         Hint("Claude Code sessions show up here once a hook fires.")
@@ -34,7 +34,7 @@ struct AgentsView: View {
                                         .frame(width: 7, height: 7)
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text((s.cwd as NSString).lastPathComponent).font(Theme.caption).lineLimit(1)
-                                        Text(s.status).font(.system(size: 10)).foregroundStyle(.white.opacity(0.5))
+                                        Text(s.status).font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.5))
                                     }
                                     Spacer()
                                 }
@@ -54,11 +54,11 @@ struct AgentsView: View {
             HStack {
                 Image(systemName: a.tool == "Bash" ? "terminal.fill" : "pencil").foregroundStyle(Theme.orange)
                 Text(a.tool).font(Theme.title)
-                Text((a.cwd as NSString).lastPathComponent).font(Theme.caption).foregroundStyle(.white.opacity(0.5))
+                Text((a.cwd as NSString).lastPathComponent).font(Theme.caption).foregroundStyle(Theme.ink.opacity(0.5))
                 Spacer()
             }
             ScrollView {
-                Text(a.summary).font(.system(size: 12, design: .monospaced))
+                Text(a.summary).font(.system(size: 13, design: .monospaced))
                     .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
             }
             .padding(8)
@@ -81,10 +81,10 @@ struct AgentsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(Array(svc.history.enumerated()), id: \.offset) { _, h in
                             HStack {
-                                Text(h.2).font(.system(size: 10, weight: .semibold))
+                                Text(h.2).font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(h.2 == "allow" ? Theme.green : h.2 == "deny" ? Theme.red : .gray)
                                     .frame(width: 44, alignment: .leading)
-                                Text(h.1).font(.system(size: 11, design: .monospaced)).lineLimit(1)
+                                Text(h.1).font(.system(size: 12, design: .monospaced)).lineLimit(1)
                             }
                         }
                     }

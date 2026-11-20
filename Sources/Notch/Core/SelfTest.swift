@@ -90,6 +90,13 @@ enum SelfTest {
         assert(TrackerService.company(in: "Hi, this is Priya from AHEAD", names: names) == "AHEAD")
         let known = TrackerService.content("Tell me about your data-centre analysis")
         assert(Double(TrackerService.content("Walk me through the data centre analysis you did").intersection(known).count) >= 2)
+        // CV pick: tracker's "CV used" for a known company wins; else role words.
+        let tr = [["Company", "Status", "CV used"], ["NEC India (via LanceSoft)", "Applied", "CV1 Research"]]
+        assert(TrackerService.cvNumber(for: "", company: "NEC India", trackerRows: tr)?.n == 1)
+        assert(TrackerService.cvNumber(for: "We're hiring an AI application engineer, React and TypeScript", company: nil, trackerRows: tr)?.n == 3)
+        assert(TrackerService.cvNumber(for: "AI training and LLM evaluation work, RLHF", company: nil, trackerRows: tr)?.n == 2)
+        assert(TrackerService.cvNumber(for: "operations manager for fielding and market research", company: nil, trackerRows: tr)?.n == 1)
+        assert(TrackerService.cvNumber(for: "hello how are you", company: nil, trackerRows: tr) == nil)
         // Job tracker sheet: quoted CSV (commas, "" and new lines inside), sheet id from a link, follow-ups due.
         let rows = TrackerService.csv("Company,Target role,Status,Follow-up date\n\"NEC, India\",\"Sr \"\"Exec\"\"\nBD\",Applied,11-Nov-2026\nOddup,Analyst,Rejected,12-Nov-2026\nEpoch,Researcher,Applied,30-Dec-2099\n")
         assert(rows.count == 4 && rows[1] == ["NEC, India", "Sr \"Exec\"\nBD", "Applied", "11-Nov-2026"], "\(rows)")

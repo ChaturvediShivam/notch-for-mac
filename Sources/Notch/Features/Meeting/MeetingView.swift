@@ -228,6 +228,10 @@ struct MeetingView: View {
             Divider()
             row("Model") { modelMenu }
             Divider()
+            if store.config.meetingRole != "interview" {
+                row("CV") { cvMenu }
+                Divider()
+            }
             row("Start with calls") {
                 Toggle("", isOn: $store.config.meetingAuto).toggleStyle(.switch).controlSize(.mini).labelsHidden()
                     .help("Start and stop with Zoom, Meet, Teams… calls")
@@ -264,6 +268,30 @@ struct MeetingView: View {
                 .font(.system(size: 11))
         }
         .menuStyle(.borderlessButton).fixedSize()
+    }
+
+    /// Which of my CVs the answers follow: picked from the call (company in the tracker, role words), or by hand.
+    private var cvMenu: some View {
+        let cvs = TrackerService.shared.cvs, cur = mt.callCV, choice = store.config.cvChoice
+        return Menu {
+            if !cvs.isEmpty {
+                Button { store.config.cvChoice = 0 } label: {
+                    let t = "Auto: from the call" + (choice == 0 ? (cur.map { " (now CV\($0.n), \($0.why))" } ?? "") : "")
+                    if choice == 0 { Label(t, systemImage: "checkmark") } else { Text(t) }
+                }
+                ForEach(Array(cvs.enumerated()), id: \.offset) { i, cv in
+                    Button { store.config.cvChoice = i + 1 } label: {
+                        if choice == i + 1 { Label(cv.name, systemImage: "checkmark") } else { Text(cv.name) }
+                    }
+                }
+                Divider()
+            }
+            Button("Choose CV files…") { TrackerService.shared.chooseCVs() }
+        } label: {
+            Text(cur.map { "CV\($0.n)" + (choice == 0 ? " · auto" : "") } ?? "Use the CV box").font(.system(size: 11))
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+        .help("Your CV versions (CV1 research, CV2 research + AI, CV3 AI builder…). Auto picks by the company in your tracker, then by the role words in the Job box, calendar and what they say.")
     }
 
     private func row<C: View>(_ label: String, @ViewBuilder _ control: () -> C) -> some View {

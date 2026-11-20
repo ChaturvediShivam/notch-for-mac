@@ -1,4 +1,5 @@
-import Foundation
+import AppKit
+import PDFKit
 
 /// Job-search tracker from a Google Sheet shared as "anyone with the link". Read-only, no Google login:
 /// each tab comes down as CSV. Meeting answers get it as context (expected CTC, where I applied, CV notes),
@@ -11,6 +12,7 @@ final class TrackerService: ObservableObject {
 
     @Published private(set) var text = ""                                   // all tabs as plain lines, for prompts
     @Published private(set) var qaRows: [[String]] = []                     // my prepared interview Q&A sheet (row 0 = headings)
+    @Published private(set) var cvs: [(name: String, text: String)] = []      // CV1, CV2, CV3… in file-name order
     private(set) var trackerRows: [[String]] = []                            // Application Tracker (row 0 = headings)
     @Published private(set) var followUps: [(company: String, role: String, status: String, date: Date)] = []
     @Published private(set) var status = ""
@@ -29,6 +31,7 @@ final class TrackerService: ObservableObject {
         guard c.netTracker else { text = ""; qaRows = []; trackerRows = []; followUps = []; return }
         if !force, let l = lastFetch, Date().timeIntervalSince(l) < 1800 { return }
         lastFetch = Date()
+        loadCVs()
         Task {
             // Q&A sheet: the tab in the link (gid), or its first tab.
             if let id = Self.sheetID(c.qaURL) { qaRows = await Self.fetch(id, ["gid": Self.gid(c.qaURL) ?? "0"]) ?? [] } else { qaRows = [] }
@@ -44,6 +47,59 @@ final class TrackerService: ObservableObject {
             followUps = Self.due(rows)
             status = parts.isEmpty ? "Couldn't read the sheet. Is it shared as \"Anyone with the link\"?" : ""
         }
+    }
+
+    // MARK: Which CV fits this call
+
+    /// Reads the CV files off the main thread (PDF text or plain text).
+    func loadCVs() {
+        let paths = Store.shared.config.cvPaths.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        Task.detached {
+            let out = paths.compactMap { p -> (String, String)? in
+                let u = URL(fileURLWithPath: p)
+                let t = u.pathExtension.lowercased() == "pdf" ? PDFDocument(url: u)?.string : try? String(contentsOf: u, encoding: .utf8)
+                return t.flatMap { $0.isEmpty ? nil : (u.deletingPathExtension().lastPathComponent, $0) }
+            }
+            await MainActor.run { TrackerService.shared.cvs = out }
+        }
+    }
+
+    /// Pick the CV files (several at once). File names in order = CV1, CV2, CV3.
+    func chooseCVs() {
+        let p = NSOpenPanel()
+        p.allowsMultipleSelection = true
+        p.allowedContentTypes = [.pdf, .plainText]
+        p.message = "Choose your CV versions. Name order = CV1, CV2, CV3."
+        p.level = .popUpMenu
+        NSApp.activate(ignoringOtherApps: true)
+        defer { NotchModel.shared.show(.meeting) }
+        guard p.runModal() == .OK, !p.urls.isEmpty else { return }
+        Store.shared.config.cvPaths = p.urls.map(\.path)
+        loadCVs()
+    }
+
+    /// Words that point to each CV, as in the Role Fit tab: CV1 research / CI / strategy / ops / KYC,
+    /// CV2 research + AI, CV3 building AI products.
+    nonisolated static let cvSignals: [[String]] = [
+        ["market research", "competitive intelligence", "market intelligence", "market development", "strategy", "business expansion",
+         "due diligence", "kyc", "aml", "insights", "operations", "fielding", "consulting", "benchmarking"],
+        ["ai research", "research operations", "ai training", "ai analyst", "llm", "genai", "gen ai", "rlhf", "annotation",
+         "prompt", "evaluation", "ai expert", "machine learning", "data quality", "ai tools"],
+        ["engineer", "engineering", "developer", "frontend", "front-end", "full-stack", "full stack", "react", "typescript",
+         "software", "ai application", "agentic", "builder", "product development", "founder", "api", "swift"]]
+
+    /// Which CV (1-based) the call is about: the tracker's "CV used" for this company, else the role words heard
+    /// or in the Job box / calendar. nil = no signal.
+    nonisolated static func cvNumber(for text: String, company: String?, trackerRows: [[String]]) -> (n: Int, why: String)? {
+        if let company, let ci = column(trackerRows, "company"), let vi = column(trackerRows, "cv"),
+           let row = trackerRows.dropFirst().first(where: { ci < $0.count && $0[ci].lowercased().contains(company.split(separator: " ")[0].lowercased()) }),
+           vi < row.count, let d = row[vi].first(where: { ("1"..."9").contains(String($0)) }), let n = Int(String(d)) {
+            return (n, "\(company) in your tracker")
+        }
+        let t = " " + text.lowercased() + " "
+        let scores = cvSignals.map { ks in ks.filter { t.range(of: "(?<![a-z])" + NSRegularExpression.escapedPattern(for: $0) + "(?![a-z])", options: .regularExpression) != nil } }
+        guard let best = scores.indices.max(by: { scores[$0].count < scores[$1].count }), !scores[best].isEmpty else { return nil }
+        return (best + 1, "heard " + scores[best].prefix(2).joined(separator: ", "))
     }
 
     // MARK: Which company is this call with

@@ -13,6 +13,8 @@ struct Config: Codable, Equatable {
     var netTracker = true           // job tracker Google Sheet (read-only CSV)
     var trackerURL = ""             // that sheet's link, shared as "anyone with the link"
     var qaURL = ""                  // my prepared interview Q&A sheet (link to the tab)
+    var cvPaths: [String] = []       // my CV versions (PDF/text), CV1, CV2, CV3…: the call's role picks one
+    var cvChoice = 0                 // 0 = pick by the call, else that CV number
     var sheetWriteURL = ""          // Apps Script web app that updates the sheets after a call (key in Keychain)
 
     var city = ""                   // weather location by name (no Location permission needed)
@@ -63,7 +65,7 @@ struct Config: Codable, Equatable {
         netLyrics = v(.netLyrics, z.netLyrics); netWeather = v(.netWeather, z.netWeather)
         netMarkets = v(.netMarkets, z.netMarkets); netScores = v(.netScores, z.netScores)
         netClaude = v(.netClaude, z.netClaude); netLocalAPI = v(.netLocalAPI, z.netLocalAPI)
-        netTracker = v(.netTracker, z.netTracker); trackerURL = v(.trackerURL, z.trackerURL); qaURL = v(.qaURL, z.qaURL); sheetWriteURL = v(.sheetWriteURL, z.sheetWriteURL)
+        netTracker = v(.netTracker, z.netTracker); trackerURL = v(.trackerURL, z.trackerURL); qaURL = v(.qaURL, z.qaURL); sheetWriteURL = v(.sheetWriteURL, z.sheetWriteURL); cvPaths = v(.cvPaths, z.cvPaths); cvChoice = v(.cvChoice, z.cvChoice)
         city = v(.city, z.city); useLocation = v(.useLocation, z.useLocation); celsius = v(.celsius, z.celsius)
         watchlist = v(.watchlist, z.watchlist); leagues = v(.leagues, z.leagues)
         apiPort = v(.apiPort, z.apiPort); claudeModel = v(.claudeModel, z.claudeModel); claudeCwd = v(.claudeCwd, z.claudeCwd); meetingLocale = v(.meetingLocale, z.meetingLocale); meetingTopic = v(.meetingTopic, z.meetingTopic); meetingAuto = v(.meetingAuto, z.meetingAuto)

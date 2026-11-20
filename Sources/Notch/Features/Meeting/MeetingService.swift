@@ -577,13 +577,28 @@ final class MeetingService: NSObject, ObservableObject {
 
     /// Which company this call is with: a calendar event around now, the Job box, or what they said
     /// ("Hi, I'm Priya from Marsh"), matched against the companies in my sheets.
-    var callCompany: String? {
+    var callCompany: String? { TrackerService.company(in: callText, names: TrackerService.shared.companies) }
+
+    /// What the call is about: a calendar event around now, the Job box, and what they've said so far.
+    private var callText: String {
         let now = Date()
         let cal = TodayService.shared.events.filter { $0.startDate.addingTimeInterval(-1800) <= now && $0.endDate >= now }
             .map { [$0.title, $0.location, $0.notes].compactMap { $0 }.joined(separator: " ") }
-        let heard = lines.prefix(40).filter { $0.speaker == "Them" }.map(\.text)
-        return TrackerService.company(in: (cal + [Store.shared.config.meetingJD] + heard).joined(separator: "\n"),
-                                      names: TrackerService.shared.companies)
+        let heard = lines.suffix(60).filter { $0.speaker == "Them" }.map(\.text)
+        return (cal + [Store.shared.config.meetingJD] + heard).joined(separator: "\n")
+    }
+
+    /// The CV this call is about (my CV files in Settings): picked by hand, else by company / role words,
+    /// else CV2 (research + AI covers most calls). nil when no CV files are set: the CV box is used.
+    var callCV: (n: Int, name: String, text: String, why: String)? {
+        let cvs = TrackerService.shared.cvs
+        guard !cvs.isEmpty else { return nil }
+        let c = Store.shared.config
+        let pick: (n: Int, why: String) = c.cvChoice > 0 ? (c.cvChoice, "chosen")
+            : TrackerService.cvNumber(for: callText, company: callCompany, trackerRows: TrackerService.shared.trackerRows)
+              ?? (min(2, cvs.count), "default")
+        let i = min(max(pick.n, 1), cvs.count) - 1
+        return (i + 1, cvs[i].name, cvs[i].text, pick.why)
     }
 
     /// Shared by every prompt: the context boxes, and how to treat speech-to-text mistakes.
@@ -591,9 +606,13 @@ final class MeetingService: NSObject, ObservableObject {
         let c = Store.shared.config
         // ponytail: hard cap keeps prompts fast; summarise first if people paste whole books.
         func box(_ v: String, _ n: Int) -> String { String(v.trimmingCharacters(in: .whitespacesAndNewlines).prefix(n)) }
-        let cv = box(c.meetingCV, 12_000), jd = box(c.meetingJD, 6_000), notes = box(c.meetingTopic, 6_000)
+        let picked = interviewing ? nil : callCV
+        let cv = box(picked?.text ?? c.meetingCV, 12_000), jd = box(c.meetingJD, 6_000), notes = box(c.meetingTopic, 6_000)
         var parts: [String] = []
-        if !cv.isEmpty { parts.append((interviewing ? "The candidate's resume" : "My resume") + ":\n<<<\n\(cv)\n>>>") }
+        if let picked {
+            parts.append("My resume for this call (CV\(picked.n) of my \(TrackerService.shared.cvs.count) versions, fitted to this kind of role). " +
+                         "Frame my answers the way this CV does:\n<<<\n\(cv)\n>>>")
+        } else if !cv.isEmpty { parts.append((interviewing ? "The candidate's resume" : "My resume") + ":\n<<<\n\(cv)\n>>>") }
         if !jd.isEmpty { parts.append("The job description / agenda:\n<<<\n\(jd)\n>>>") }
         let firm = interviewing ? nil : callCompany
         let qa = interviewing ? "" : box(TrackerService.shared.qaText(company: firm), 30_000)

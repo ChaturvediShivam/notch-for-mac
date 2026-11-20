@@ -17,6 +17,7 @@ final class TrackerService: ObservableObject {
     @Published private(set) var followUps: [(company: String, role: String, status: String, date: Date)] = []
     @Published private(set) var status = ""
     private var lastFetch: Date?
+    private var tabText: [String: String] = [:]   // last good copy of each tracker tab
 
     /// Sheet id from a pasted link (or the bare id).
     nonisolated static func sheetID(_ link: String) -> String? {
@@ -28,24 +29,28 @@ final class TrackerService: ObservableObject {
     /// Every 30 min at most, unless forced (Today's refresh button, a meeting starting).
     func refresh(force: Bool = false) {
         let c = Store.shared.config
-        guard c.netTracker else { text = ""; qaRows = []; trackerRows = []; followUps = []; return }
+        guard c.netTracker else { text = ""; tabText = [:]; qaRows = []; trackerRows = []; followUps = []; return }
         if !force, let l = lastFetch, Date().timeIntervalSince(l) < 1800 { return }
         lastFetch = Date()
         loadCVs()
         Task {
-            // Q&A sheet: the tab in the link (gid), or its first tab.
-            if let id = Self.sheetID(c.qaURL) { qaRows = await Self.fetch(id, ["gid": Self.gid(c.qaURL) ?? "0"]) ?? [] } else { qaRows = [] }
-            guard let id = Self.sheetID(c.trackerURL) else { text = ""; followUps = []; return }
-            var parts: [String] = [], rows: [[String]] = []
-            for tab in Self.tabs {
-                guard let t = await Self.fetch(id, ["sheet": tab]) else { continue }
-                parts.append("## \(tab)\n" + t.map { $0.filter { !$0.isEmpty }.joined(separator: " | ") }.joined(separator: "\n"))
-                if tab == "Application Tracker" { rows = t }
+            // All tabs at once (~0.5 s each). A tab that fails to load keeps what we had: a network blip
+            // mid-call mustn't leave the answers without my salary / Q&A until the next refresh.
+            async let qaFetch = Self.sheetID(c.qaURL).asyncMap { await Self.fetch($0, ["gid": Self.gid(c.qaURL) ?? "0"]) }
+            let tid = Self.sheetID(c.trackerURL)
+            var got: [String: [[String]]] = [:]
+            if let tid {
+                await withTaskGroup(of: (String, [[String]]?).self) { g in
+                    for tab in Self.tabs { g.addTask { (tab, await Self.fetch(tid, ["sheet": tab])) } }
+                    for await (tab, t) in g { if let t { got[tab] = t } }
+                }
             }
-            text = parts.joined(separator: "\n\n")
-            trackerRows = rows
-            followUps = Self.due(rows)
-            status = parts.isEmpty ? "Couldn't read the sheet. Is it shared as \"Anyone with the link\"?" : ""
+            if Self.sheetID(c.qaURL) == nil { qaRows = [] } else if let q = await qaFetch ?? nil { qaRows = q }
+            guard tid != nil else { text = ""; trackerRows = []; followUps = []; return }
+            for tab in Self.tabs { if let t = got[tab] { tabText[tab] = "## \(tab)\n" + t.map { $0.filter { !$0.isEmpty }.joined(separator: " | ") }.joined(separator: "\n") } }
+            text = Self.tabs.compactMap { tabText[$0] }.joined(separator: "\n\n")
+            if let rows = got["Application Tracker"] { trackerRows = rows; followUps = Self.due(rows) }
+            status = got.isEmpty ? (text.isEmpty ? "Couldn't read the sheet. Is it shared as \"Anyone with the link\"?" : "Sheet not reachable; using the last copy.") : ""
         }
     }
 
@@ -82,11 +87,16 @@ final class TrackerService: ObservableObject {
     /// CV2 research + AI, CV3 building AI products.
     nonisolated static let cvSignals: [[String]] = [
         ["market research", "competitive intelligence", "market intelligence", "market development", "strategy", "business expansion",
-         "due diligence", "kyc", "aml", "insights", "operations", "fielding", "consulting", "benchmarking"],
+         "due diligence", "kyc", "aml", "insights", "operations", "fielding", "consulting", "benchmarking",
+         // freelance clients describe the work, not a title
+         "competitor analysis", "competitor research", "market sizing", "lead list", "lead generation", "survey",
+         "industry report", "desk research", "secondary research", "business plan", "feasibility"],
         ["ai research", "research operations", "ai training", "ai analyst", "llm", "genai", "gen ai", "rlhf", "annotation",
-         "prompt", "evaluation", "ai expert", "machine learning", "data quality", "ai tools"],
+         "prompt", "evaluation", "ai expert", "machine learning", "data quality", "ai tools",
+         "data labelling", "data labeling", "labelling", "labeling", "fact-checking", "fact checking", "ai writing", "red teaming"],
         ["engineer", "engineering", "developer", "frontend", "front-end", "full-stack", "full stack", "react", "typescript",
-         "software", "ai application", "agentic", "builder", "product development", "founder", "api", "swift"]]
+         "software", "ai application", "agentic", "builder", "product development", "founder", "api", "swift",
+         "chatbot", "automation", "automate", "dashboard", "website", "web app", "app", "mvp", "integration", "workflow", "n8n", "zapier"]]
 
     /// Which CV (1-based) the call is about: the tracker's "CV used" for this company, else the role words heard
     /// or in the Job box / calendar. nil = no signal.
@@ -97,7 +107,7 @@ final class TrackerService: ObservableObject {
             return (n, "\(company) in your tracker")
         }
         let t = " " + text.lowercased() + " "
-        let scores = cvSignals.map { ks in ks.filter { t.range(of: "(?<![a-z])" + NSRegularExpression.escapedPattern(for: $0) + "(?![a-z])", options: .regularExpression) != nil } }
+        let scores = cvSignals.map { ks in ks.filter { t.range(of: "(?<![a-z])" + NSRegularExpression.escapedPattern(for: $0) + "s?(?![a-z])", options: .regularExpression) != nil } }
         guard let best = scores.indices.max(by: { scores[$0].count < scores[$1].count }), !scores[best].isEmpty else { return nil }
         return (best + 1, "heard " + scores[best].prefix(2).joined(separator: ", "))
     }
@@ -117,9 +127,12 @@ final class TrackerService: ObservableObject {
             guard let ci = Self.column(rows, "company") else { continue }
             for r in rows.dropFirst() where ci < r.count {
                 let name = r[ci].components(separatedBy: " – ")[0].components(separatedBy: " (")[0]
+                // A role group ("AI / agentic roles", "Research / CI roles") is skipped whole, not split into "CI", "AI".
+                let low = name.lowercased()
+                guard !Self.groups.contains(where: { low.hasPrefix($0) }), !low.contains("role") else { continue }
                 for n in name.components(separatedBy: " / ") {
                     let n = n.trimmingCharacters(in: .whitespaces)
-                    if !n.isEmpty, !Self.groups.contains(where: { n.lowercased().hasPrefix($0) }), !out.contains(n) { out.append(n) }
+                    if !n.isEmpty, !out.contains(n) { out.append(n) }
                 }
             }
         }
@@ -281,4 +294,9 @@ final class TrackerService: ObservableObject {
         if !field.isEmpty || !row.isEmpty { row.append(field); rows.append(row) }
         return rows
     }
+}
+
+extension Optional {
+    /// `map` with an async transform.
+    func asyncMap<T>(_ f: (Wrapped) async -> T) async -> T? { if let w = self { return await f(w) }; return nil }
 }

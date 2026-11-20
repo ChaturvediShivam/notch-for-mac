@@ -97,6 +97,10 @@ enum SelfTest {
         assert(TrackerService.cvNumber(for: "AI training and LLM evaluation work, RLHF", company: nil, trackerRows: tr)?.n == 2)
         assert(TrackerService.cvNumber(for: "operations manager for fielding and market research", company: nil, trackerRows: tr)?.n == 1)
         assert(TrackerService.cvNumber(for: "hello how are you", company: nil, trackerRows: tr) == nil)
+        // Freelance clients describe the work: plurals count too.
+        assert(TrackerService.cvNumber(for: "freelance gig: we need a couple of chatbots and an automation for our CRM", company: nil, trackerRows: tr)?.n == 3)
+        assert(TrackerService.cvNumber(for: "contract work, competitor analysis and market sizing for our startup", company: nil, trackerRows: tr)?.n == 1)
+        assert(TrackerService.cvNumber(for: "part-time data labelling and prompt writing", company: nil, trackerRows: tr)?.n == 2)
         // Job tracker sheet: quoted CSV (commas, "" and new lines inside), sheet id from a link, follow-ups due.
         let rows = TrackerService.csv("Company,Target role,Status,Follow-up date\n\"NEC, India\",\"Sr \"\"Exec\"\"\nBD\",Applied,11-Nov-2026\nOddup,Analyst,Rejected,12-Nov-2026\nEpoch,Researcher,Applied,30-Dec-2099\n")
         assert(rows.count == 4 && rows[1] == ["NEC, India", "Sr \"Exec\"\nBD", "Applied", "11-Nov-2026"], "\(rows)")

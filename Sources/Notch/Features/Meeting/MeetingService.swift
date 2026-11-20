@@ -324,6 +324,7 @@ final class MeetingService: NSObject, ObservableObject {
         startedAt = resumed ?? Date()
         TrackerService.shared.refresh(force: true)   // latest salary / applications before the first answer
         TodayService.shared.loadEvents()               // the calendar event tells which company this call is with
+        _ = callCV   // warm-up: the first regex match costs ~60 ms (one-time setup); pay it now, not at the first question
         if coaching { GazeTracker.shared.start(); log("delivery coach on (camera, nothing recorded)") }
         Self.themBuffers = 0; Self.meBuffers = 0
         meterTimer?.invalidate()
@@ -602,6 +603,8 @@ final class MeetingService: NSObject, ObservableObject {
     }
 
     /// Shared by every prompt: the context boxes, and how to treat speech-to-text mistakes.
+    var promptContext: String { context }   // Bench: cost of building it
+
     private var context: String {
         let c = Store.shared.config
         // ponytail: hard cap keeps prompts fast; summarise first if people paste whole books.
@@ -875,6 +878,10 @@ final class MeetingService: NSObject, ObservableObject {
         if stale.isEmpty, isRepeat(line) { log("skipped repeat: \(Self.redact(line, 60))"); return }
         if let r = runningSid, stale.contains(r) { running?.cancel(); running = nil }
         suggestions.removeAll { stale.contains($0.id) }
+        if !mine {
+            let t = TrackerService.shared, cv = callCV
+            log("context: cv=\(cv.map { "CV\($0.n) (\($0.why))" } ?? "box") company=\(callCompany ?? "-") qaRows=\(max(t.qaRows.count - 1, 0)) tracker=\(t.text.count) chars")
+        }
         run(title: title, prompt: prompt, auto: true)
         if !NotchModel.shared.isOpen { NotchModel.shared.show(.meeting) }
     }

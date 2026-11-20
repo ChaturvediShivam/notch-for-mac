@@ -31,6 +31,31 @@ enum Bench {
             }
             return
         }
+        if only == "context" {
+            // Linkage + cost: are CVs / tracker / Q&A loaded, which CV and company a call would get, and how long
+            // building the answer context takes on the main thread (it runs for every answer).
+            TrackerService.shared.refresh(force: true)
+            Task {
+                try? await Task.sleep(for: .seconds(8))
+                let t = TrackerService.shared, mt = MeetingService.shared
+                var out = "cvs=\(t.cvs.map { "\($0.name): \($0.text.count) chars" }) qaRows=\(max(t.qaRows.count - 1, 0)) tracker=\(t.text.count) chars companies=\(t.companies) followUps=\(t.followUps.count)\n"
+                for jd in ["", "Senior Executive, Business Expansion at NEC India", "AI Application Engineer: React, TypeScript, agentic workflows",
+                           "AI training: LLM evaluation and RLHF", "Operations Manager, fielding and quotas", "Upwork: build a WhatsApp chatbot and a sales dashboard",
+                           "Freelance: competitor analysis and market sizing for a D2C brand", "Contract: prompt writing and data labelling"] {
+                    let saved = Store.shared.config.meetingJD
+                    Store.shared.config.meetingJD = jd
+                    let t0 = CACurrentMediaTime()
+                    let cv = mt.callCV, firm = mt.callCompany, ctx = mt.promptContext
+                    let ms = (CACurrentMediaTime() - t0) * 1000
+                    Store.shared.config.meetingJD = saved
+                    out += String(format: "%-60@ → CV%d (%@) company=%@ context=%d chars, %.1f ms\n", "\"\(jd)\"" as NSString,
+                                  cv?.n ?? 0, (cv?.why ?? "-") as NSString, (firm ?? "-") as NSString, ctx.count, ms)
+                }
+                print(out, terminator: "")
+                NSApp.terminate(nil)
+            }
+            return
+        }
         if only == "meeting" {
             // Live speech on the Meeting tab: a partial result every 100 ms, as the recogniser sends them.
             steps.append(("open meeting", 0.9, { m.show(.meeting) }))

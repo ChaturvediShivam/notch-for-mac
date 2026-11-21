@@ -142,11 +142,18 @@ final class TrackerService: ObservableObject {
 
     /// First company whose first word shows up in `text` as a whole word. Names written in capitals
     /// in the sheet (AHEAD, NAILBITER) must match in capitals, so "ahead of time" in a JD isn't a company.
+    nonisolated static let spoken = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
+
     nonisolated static func company(in text: String, names: [String]) -> String? {
         names.first { n in
             guard let key = n.split(separator: " ").first.map(String.init), key.count >= 3 else { return false }
             let caps = key == key.uppercased() && key.contains(where: \.isLetter)
-            let pattern = "(?<![A-Za-z0-9])" + NSRegularExpression.escapedPattern(for: key) + "(?![A-Za-z0-9])"
+            // Speech-to-text writes digits as words: "micro1" is heard as "micro one".
+            let body = key.map { ch -> String in
+                guard let d = ch.wholeNumberValue, d < spoken.count else { return NSRegularExpression.escapedPattern(for: String(ch)) }
+                return "(?:\(d)|[ -]?\(spoken[d]))"
+            }.joined()
+            let pattern = "(?<![A-Za-z0-9])" + body + "(?![A-Za-z0-9])"
             return text.range(of: pattern, options: caps ? .regularExpression : [.regularExpression, .caseInsensitive]) != nil
         }
     }

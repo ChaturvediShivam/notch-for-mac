@@ -101,6 +101,13 @@ enum SelfTest {
         assert(TrackerService.cvNumber(for: "freelance gig: we need a couple of chatbots and an automation for our CRM", company: nil, trackerRows: tr)?.n == 3)
         assert(TrackerService.cvNumber(for: "contract work, competitor analysis and market sizing for our startup", company: nil, trackerRows: tr)?.n == 1)
         assert(TrackerService.cvNumber(for: "part-time data labelling and prompt writing", company: nil, trackerRows: tr)?.n == 2)
+        // Spoken digits: "micro one" is micro1. Follow-ups within 8 s join their question.
+        assert(TrackerService.company(in: "I'm an AI recruiter at micro one.", names: ["micro1"]) == "micro1")
+        assert(TrackerService.company(in: "a micro-one company", names: ["micro1"]) == "micro1")
+        let q0 = Date()
+        let fq = MeetingService.mergeFollowUps([(q0, "Tell me about a time a tool failed you."), (q0.addingTimeInterval(3), "What did you do next?"),
+                                                (q0.addingTimeInterval(60), "Why this role?")])
+        assert(fq == ["Tell me about a time a tool failed you. What did you do next?", "Why this role?"], "\(fq)")
         // Job tracker sheet: quoted CSV (commas, "" and new lines inside), sheet id from a link, follow-ups due.
         let rows = TrackerService.csv("Company,Target role,Status,Follow-up date\n\"NEC, India\",\"Sr \"\"Exec\"\"\nBD\",Applied,11-Nov-2026\nOddup,Analyst,Rejected,12-Nov-2026\nEpoch,Researcher,Applied,30-Dec-2099\n")
         assert(rows.count == 4 && rows[1] == ["NEC, India", "Sr \"Exec\"\nBD", "Applied", "11-Nov-2026"], "\(rows)")

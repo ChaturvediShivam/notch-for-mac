@@ -91,7 +91,7 @@ final class MeetingService: NSObject, ObservableObject {
             lines = []; suggestions = []; resumed = nil
         }
         last = nil; resumable = nil; savedTo = nil; answered = [:]
-        turn = nil; turns = []; cardEvents = []; lastThemAt = nil
+        turn = nil; turns = []; cardEvents = []; lastThemAt = nil; lockedCV = nil
     }
 
     /// "New meeting": drop what was carried over (it's already saved) and start this one empty.
@@ -360,18 +360,47 @@ final class MeetingService: NSObject, ObservableObject {
     /// on a card and into the sheet; a call of 5+ min with a known company marks it Interviewed in the tracker.
     private func reportToSheets() {
         guard Store.shared.config.meetingRole == "answer" else { return }
-        let heard = suggestions.filter { $0.auto && !$0.title.hasPrefix(Self.minePrefix) && $0.time >= (startedAt ?? .distantPast) }
-            .map(\.title).reversed()
-        let fresh = TrackerService.shared.newQuestions(Array(heard))
+        let asked = suggestions.filter { $0.auto && !$0.title.hasPrefix(Self.minePrefix) && $0.time >= (startedAt ?? .distantPast) }
+            .reversed().map { ($0.time, $0.title) }
+        let fresh = TrackerService.shared.newQuestions(Self.mergeFollowUps(Array(asked)))
         let firm = (startedAt.map { Date().timeIntervalSince($0) >= 300 } ?? false) ? callCompany : nil
-        if !fresh.isEmpty {
-            suggestions.insert(Suggestion(title: "New questions (not in your Q&A sheet)",
-                                          text: fresh.map { "• " + $0 }.joined(separator: "\n"), auto: false, done: true), at: 0)
-        }
         log("after call: company=\(firm ?? "-") newQuestions=\(fresh.count)")
         Task {
-            if let r = await TrackerService.shared.report(company: firm, questions: fresh) { status = r; log("sheets: \(r)") }
+            let qs = await Self.cleanUp(fresh)
+            if !qs.isEmpty {
+                suggestions.insert(Suggestion(title: "New questions (not in your Q&A sheet)",
+                                              text: qs.map { "• " + $0 }.joined(separator: "\n"), auto: false, done: true), at: 0)
+            }
+            if let r = await TrackerService.shared.report(company: firm, questions: qs) { status = r; log("sheets: \(r)") }
         }
+    }
+
+    /// A question asked within 8 s of the one before is its follow-up ("…tell me about a time it failed?"
+    /// "What did you do next?"): one question, so the sheet doesn't get "What did you do next?" on its own.
+    nonisolated static func mergeFollowUps(_ qs: [(Date, String)]) -> [String] {
+        var out: [(Date, String)] = []
+        for (t, q) in qs {
+            if let last = out.last, t.timeIntervalSince(last.0) < 8 { out[out.count - 1] = (t, last.1 + " " + q) }
+            else { out.append((t, q)) }
+        }
+        return out.map(\.1)
+    }
+
+    /// Fix speech-to-text slips ("clod" → Claude, "Toto to end" → end-to-end) before they go into the sheet.
+    /// Same AI as the answers; on any failure the questions go in as heard.
+    private static func cleanUp(_ qs: [String]) async -> [String] {
+        guard !qs.isEmpty else { return [] }
+        let prompt = """
+        These interview questions came from live speech-to-text and have mishearings. Fix only the misheard words and \
+        punctuation (e.g. "clod" → "Claude", "Toto to end" → "end-to-end", "chat GPT" → "ChatGPT"); keep the meaning and \
+        wording otherwise. Return exactly \(qs.count) lines, one question per line, same order, nothing else.
+
+        \(qs.joined(separator: "\n"))
+        """
+        var text = ""
+        do { for try await chunk in ClaudeRunner.stream(prompt) { text += chunk } } catch { return qs }
+        let lines = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return lines.count == qs.count ? lines : qs
     }
 
     private func tickMeters() {
@@ -595,9 +624,18 @@ final class MeetingService: NSObject, ObservableObject {
         let cvs = TrackerService.shared.cvs
         guard !cvs.isEmpty else { return nil }
         let c = Store.shared.config
-        let pick: (n: Int, why: String) = c.cvChoice > 0 ? (c.cvChoice, "chosen")
-            : TrackerService.cvNumber(for: callText, company: callCompany, trackerRows: TrackerService.shared.trackerRows)
-              ?? (min(2, cvs.count), "default")
+        var pick: (n: Int, why: String)
+        if c.cvChoice > 0 { pick = (c.cvChoice, "chosen") }
+        else if let l = lockedCV { pick = l }
+        else {
+            pick = TrackerService.cvNumber(for: callText, company: callCompany, trackerRows: TrackerService.shared.trackerRows)
+                ?? (min(2, cvs.count), "default")
+            // One story per call (20 Nov: CV2 → CV1 on "KYC" → CV2 on "AI tools"). The tracker's CV for this company
+            // is final at once; role words decide during the first 4 minutes, then the pick holds.
+            if pick.why.hasSuffix("tracker") || (pick.why != "default" && active && (startedAt.map { Date().timeIntervalSince($0) >= 240 } ?? false)) {
+                lockedCV = (pick.n, pick.why + ", locked"); log("cv locked: CV\(pick.n) (\(pick.why))")
+            }
+        }
         let i = min(max(pick.n, 1), cvs.count) - 1
         return (i + 1, cvs[i].name, cvs[i].text, pick.why)
     }
@@ -657,6 +695,7 @@ final class MeetingService: NSObject, ObservableObject {
     private var turn: (start: Date, progress: [(Date, Int)], after: Date?)?
     private var lastThemAt: Date?
     private var starting = false
+    private var lockedCV: (n: Int, why: String)?
     private var cardEvents: [Date] = []
     private var turns: [(words: Int, secs: Double, pauses: Int, waited: Int, fillers: Int)] = []
     nonisolated static let fillerWords: Set<String> = ["uh", "um", "umm", "uhh", "hmm", "er", "ah"]
